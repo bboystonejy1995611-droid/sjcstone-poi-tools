@@ -121,3 +121,5 @@ git push -u origin main
 │   └── views/GeneratorView.vue     # 首页
 └── test/generator.test.mjs         # 回归测试
 ```
+
+Web Analytics enabled
