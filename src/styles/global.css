@@ -1,0 +1,222 @@
+/* ============================================================
+   AI 本地商家营销工具 · 全局样式（深色 / 蓝紫渐变 / 玻璃拟态）
+   ============================================================ */
+
+:root {
+  /* 色板 */
+  --bg: #070b18;
+  --bg-soft: #0b1126;
+  --card-bg: rgba(255, 255, 255, 0.05);
+  --card-bg-strong: rgba(17, 24, 51, 0.72);
+  --card-border: rgba(255, 255, 255, 0.09);
+  --card-border-strong: rgba(255, 255, 255, 0.16);
+  --text: #f1f5ff;
+  --text-dim: #98a1bf;
+  --text-faint: #6b7390;
+
+  --primary: #4f7cff;
+  --violet: #8b5cf6;
+  --purple: #a855f7;
+  --cyan: #38e0ff;
+  --pink: #e879f9;
+  --green: #34d399;
+  --amber: #fbbf24;
+  --danger: #f87171;
+
+  --grad-main: linear-gradient(135deg, #4f7cff 0%, #8b5cf6 55%, #c084fc 100%);
+  --grad-text: linear-gradient(120deg, #7cc0ff 0%, #a78bfa 50%, #e879f9 100%);
+
+  /* 圆角 / 阴影 */
+  --radius-sm: 10px;
+  --radius: 16px;
+  --radius-lg: 22px;
+  --shadow-card: 0 10px 30px rgba(2, 6, 23, 0.45);
+  --shadow-glow: 0 0 0 1px rgba(99, 102, 241, 0.25), 0 12px 40px rgba(79, 124, 255, 0.18);
+
+  /* 字体 */
+  --font: 'PingFang SC', 'HarmonyOS Sans SC', 'Microsoft YaHei', 'Noto Sans SC',
+    -apple-system, 'Segoe UI', Roboto, sans-serif;
+
+  color-scheme: dark;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  background: none;
+  color: inherit;
+}
+
+input,
+select,
+textarea {
+  font-family: inherit;
+  color: inherit;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* ---------- 应用外壳与背景装饰 ---------- */
+.app-shell {
+  position: relative;
+  min-height: 100vh;
+  overflow: hidden;
+}
+
+.bg-glow {
+  position: fixed;
+  border-radius: 50%;
+  filter: blur(90px);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.bg-glow--1 {
+  width: 520px;
+  height: 520px;
+  top: -180px;
+  left: -140px;
+  background: radial-gradient(circle, rgba(79, 124, 255, 0.34), transparent 65%);
+}
+
+.bg-glow--2 {
+  width: 480px;
+  height: 480px;
+  bottom: -160px;
+  right: -160px;
+  background: radial-gradient(circle, rgba(168, 85, 247, 0.28), transparent 65%);
+}
+
+.bg-grid {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(139, 156, 220, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(139, 156, 220, 0.05) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(ellipse 90% 70% at 50% 0%, #000 30%, transparent 75%);
+  -webkit-mask-image: radial-gradient(ellipse 90% 70% at 50% 0%, #000 30%, transparent 75%);
+}
+
+/* ---------- 通用工具类 ---------- */
+.container {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 20px 16px calc(48px + env(safe-area-inset-bottom));
+}
+
+.card {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.grad-text {
+  background: var(--grad-text);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* 通用入场动画（配合 stagger 使用） */
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.rise-in {
+  animation: rise-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes pulse-glow {
+  0%, 100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* 表单控件基础样式 */
+.form-control {
+  width: 100%;
+  background: rgba(10, 15, 34, 0.72);
+  border: 1px solid var(--card-border-strong);
+  border-radius: var(--radius-sm);
+  padding: 13px 14px;
+  font-size: 15px;
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.form-control::placeholder {
+  color: var(--text-faint);
+}
+
+.form-control:focus {
+  border-color: rgba(129, 140, 248, 0.75);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.22);
+}
+
+/* 去除 number 输入框的上下箭头（移动端视觉更干净） */
+input[type='number']::-webkit-outer-spin-button,
+input[type='number']::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type='number'] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+@media (min-width: 768px) {
+  .container {
+    max-width: 760px;
+    padding-top: 36px;
+  }
+}
