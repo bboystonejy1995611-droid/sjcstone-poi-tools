@@ -6,6 +6,7 @@ import LandingFooter from '../components/landing/LandingFooter.vue'
 import AccountModal from '../components/landing/AccountModal.vue'
 import { useAuth } from '../composables/useAuth'
 import { siteConfig } from '../config/siteConfig'
+import { generateLocalTool } from '../utils/localGenerators'
 
 const route = useRoute()
 const { ensureAuth, generate } = useAuth()
@@ -19,16 +20,29 @@ const result = ref('')
 const error = ref('')
 const redeemOpen = ref(false)
 
-const systemPrompt =
-  '你是一位资深的本地生活营销专家，熟悉视频号POI团购、短视频与同城流量。请用简体中文输出，内容实用、直接、可落地，不要客套话。'
-
-async function handleGenerate() {
+function handleGenerate() {
   error.value = ''
   if (!tool.value) return
   if (!prompt.value.trim()) {
     error.value = '请先输入内容'
     return
   }
+
+  // 免费文字工具：浏览器本地模板生成，不调用 /api/*、不依赖 Worker/API Key
+  if (tool.value.free) {
+    try {
+      result.value = generateLocalTool(tool.value.id, prompt.value.trim())
+    } catch (e) {
+      error.value = e?.message || '生成失败，请重试'
+    }
+    return
+  }
+
+  // 付费工具（图片/视频）：积分校验与 AI 调用由 Worker 后端处理
+  handlePaidGenerate()
+}
+
+async function handlePaidGenerate() {
   if (!(await ensureAuth())) {
     error.value = '网络异常，请刷新后重试'
     return
@@ -36,22 +50,17 @@ async function handleGenerate() {
   loading.value = true
   result.value = null
   try {
-    // 图片/视频工具传 prompt，文本工具传 messages
-    const payload =
-      tool.value.type === 'image' || tool.value.type === 'video'
-        ? { prompt: prompt.value.trim() }
-        : {
-            messages: [
-              { role: 'system', content: systemPrompt },
-              { role: 'user', content: prompt.value.trim() }
-            ]
-          }
-    const data = await generate(tool.value.id, payload)
+    // 图片/视频工具传 prompt
+    const data = await generate(tool.value.id, { prompt: prompt.value.trim() })
     result.value = data
   } catch (e) {
     if (e.code === 'insufficient_points') {
       error.value = e.message
       redeemOpen.value = true // 积分不足，引导兑换卡密
+    } else if (tool.value.type === 'image') {
+      error.value = '图片生成功能即将开放'
+    } else if (tool.value.type === 'video') {
+      error.value = '视频生成功能即将开放'
     } else {
       error.value = e.message
     }
@@ -97,10 +106,13 @@ function copyResult() {
           <h1 class="tool__title">{{ tool.name }}</h1>
           <p class="tool__desc">{{ tool.desc }}</p>
           <div v-if="tool.type === 'video'" class="tool__notice">
-            🚧 宣传视频生成功能即将上线，敬请期待
+            🚧 视频生成功能即将开放
+          </div>
+          <div v-else-if="tool.free" class="tool__notice">
+            ✅ 免费使用，无需积分，无需兑换卡密
           </div>
           <div v-else class="tool__notice">
-            💡 AI 生成由服务商提供；海报生成等付费功能按次扣积分，兑换卡密后即可使用。
+            💡 本功能按次消耗 {{ tool.points }} 积分，积分不足时请先兑换卡密。
           </div>
         </div>
 
@@ -123,13 +135,18 @@ function copyResult() {
                 loading
                   ? '生成中…（调用 AI）'
                   : tool.type === 'video'
-                    ? '即将上线'
+                    ? '即将开放'
                     : tool.free
                       ? '免费生成'
                       : `生成（${tool.points} 积分/次）`
               }}
             </button>
-            <button type="button" class="l-btn l-btn--ghost l-btn--lg" @click="redeemOpen = true">
+            <button
+              v-if="!tool.free"
+              type="button"
+              class="l-btn l-btn--ghost l-btn--lg"
+              @click="redeemOpen = true"
+            >
               兑换卡密
             </button>
           </div>
