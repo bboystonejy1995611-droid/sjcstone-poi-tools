@@ -1,0 +1,262 @@
+/* ============================================================
+   官网落地页主题（浅色 / 高端 AI SaaS 风）
+   仅当 body 带有 .landing 时生效，不影响工具页深色主题。
+   ============================================================ */
+
+body.landing {
+  /* 前缀约定：l-* 为官网专用样式，避免污染工具页 */
+  color-scheme: light;
+  --bg: #f6f8fc;
+  --surface: #ffffff;
+  --surface-2: #f1f5fb;
+  --border: #e6ebf4;
+  --border-strong: #d7deec;
+
+  --text: #0b1533;
+  --text-2: #46536f;
+  --text-3: #8b95ad;
+
+  --primary: #315efb;
+  --primary-deep: #1e46e0;
+  --violet: #7c5cfc;
+  --cyan: #17c3e6;
+  --pink: #e055c8;
+  --green: #12b76a;
+  --amber: #f59e0b;
+
+  --grad-main: linear-gradient(135deg, #315efb 0%, #7c5cfc 60%, #b45cf5 100%);
+  --grad-text: linear-gradient(115deg, #315efb 0%, #7c5cfc 55%, #d05ce0 100%);
+  --grad-soft: linear-gradient(135deg, rgba(49, 94, 251, 0.08), rgba(124, 92, 252, 0.08));
+
+  --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.04), 0 12px 32px -12px rgba(15, 23, 42, 0.14);
+  --shadow-card-hover: 0 2px 4px rgba(15, 23, 42, 0.05), 0 24px 48px -16px rgba(49, 94, 251, 0.22);
+  --shadow-glow: 0 0 0 1px rgba(49, 94, 251, 0.12), 0 16px 40px -12px rgba(49, 94, 251, 0.35);
+
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* ---------- 容器 ---------- */
+.l-container {
+  position: relative;
+  width: 100%;
+  max-width: 1160px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+.l-section {
+  position: relative;
+  padding: 96px 0;
+  scroll-margin-top: 72px;
+}
+
+/* 锚点跳转时避开吸顶导航（覆盖各 section 自定义类） */
+body.landing section[id] {
+  scroll-margin-top: 72px;
+}
+
+/* ---------- 通用文案 ---------- */
+.l-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(49, 94, 251, 0.22);
+  background: rgba(49, 94, 251, 0.06);
+  color: var(--primary-deep);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+.l-title {
+  margin-top: 18px;
+  font-size: clamp(28px, 4.6vw, 42px);
+  line-height: 1.22;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  color: var(--text);
+}
+
+.l-desc {
+  margin-top: 16px;
+  max-width: 640px;
+  font-size: 16.5px;
+  line-height: 1.75;
+  color: var(--text-2);
+}
+
+.l-center {
+  text-align: center;
+}
+
+.l-center .l-desc {
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* ---------- 按钮 ---------- */
+.l-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 13px 26px;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease,
+    border-color 0.18s ease;
+  white-space: nowrap;
+}
+
+.l-btn--primary {
+  color: #fff;
+  background: var(--grad-main);
+  box-shadow: 0 10px 24px -8px rgba(72, 84, 251, 0.55);
+}
+
+.l-btn--primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 30px -8px rgba(72, 84, 251, 0.6);
+}
+
+.l-btn--ghost {
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+}
+
+.l-btn--ghost:hover {
+  border-color: rgba(49, 94, 251, 0.45);
+  color: var(--primary-deep);
+  transform: translateY(-2px);
+}
+
+.l-btn--lg {
+  padding: 16px 34px;
+  font-size: 16px;
+  border-radius: 14px;
+}
+
+/* ---------- 卡片 ---------- */
+.l-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  box-shadow: var(--shadow-card);
+}
+
+/* ---------- 标签 ---------- */
+.l-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.6;
+}
+
+.l-tag--live {
+  color: #0a9b5e;
+  background: rgba(18, 183, 106, 0.1);
+  border: 1px solid rgba(18, 183, 106, 0.28);
+}
+
+.l-tag--soon {
+  color: var(--text-3);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+
+/* ---------- 入场动画 ---------- */
+@keyframes l-rise {
+  from {
+    opacity: 0;
+    transform: translateY(26px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes l-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-12px);
+  }
+}
+
+@keyframes l-pulse-soft {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}
+
+@keyframes l-shine {
+  from {
+    transform: translateX(-120%) skewX(-18deg);
+  }
+  to {
+    transform: translateX(240%) skewX(-18deg);
+  }
+}
+
+/* 滚动显现（配合 useInView） */
+.l-reveal {
+  opacity: 0;
+  transform: translateY(28px);
+  transition: opacity 0.6s cubic-bezier(0.22, 1, 0.36, 1), transform 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.l-reveal.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* 渐变文字 */
+.l-grad-text {
+  background: var(--grad-text);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+/* 网格背景装饰 */
+.l-grid-bg {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(49, 94, 251, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(49, 94, 251, 0.05) 1px, transparent 1px);
+  background-size: 46px 46px;
+  mask-image: radial-gradient(ellipse 80% 70% at 50% 0%, #000 25%, transparent 72%);
+  -webkit-mask-image: radial-gradient(ellipse 80% 70% at 50% 0%, #000 25%, transparent 72%);
+}
+
+/* ---------- 响应式 ---------- */
+@media (max-width: 768px) {
+  .l-section {
+    padding: 64px 0;
+  }
+
+  .l-container {
+    padding: 0 18px;
+  }
+}

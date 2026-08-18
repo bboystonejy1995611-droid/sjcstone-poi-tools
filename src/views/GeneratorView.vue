@@ -17,7 +17,7 @@ const lastFormSnapshot = ref(null)
 // 统计埋点：页面访问（当前仅 console.log）
 onMounted(() => trackPageView())
 
-/** 表单提交 → 生成套餐方案 */
+/** 表单提交 → 生成套餐方案（免费引流工具，不消耗积分） */
 function handleSubmit(formData) {
   lastFormSnapshot.value = { ...formData }
   lastStoreName.value = formData.storeName
@@ -31,7 +31,7 @@ function handleSubmit(formData) {
     packageType: formData.packageType,
     marketingGoal: formData.goal
   })
-  show('方案生成完成，快去看看吧 ✨')
+  show('方案生成完成，先去看看吧 ✨')
   nextTick(() => {
     const el = document.getElementById('result-section')
     if (el) {

@@ -1,10 +1,10 @@
-# 本地商家实用工具箱 - AI团购套餐生成器
+# 视频号POI商家AI平台（视频号 POI 团购 + AI 工具赋能本地商家）
 
-本地实体商家免费营销工具的第一个工具：输入门店信息，AI（本地规则引擎）自动生成 3 套适合上架视频号 POI 团购的套餐方案。
+面向本地实体商家、视频号服务商与地推团队的 **AI 工具平台官网 + 工具站**。
 
-- **纯前端**：Vue 3 + Vite，无数据库、无登录、无外部 API、无客服微信/联系合作，部署到 Cloudflare Pages 即开即用
-- **手机端优先**：打开网页即可使用，无需安装
-- **单工具直达**：打开 tools.sjcstone.cn 直接进入 AI团购套餐生成器，无需选择
+- **官网首页（`/#/`）**：高端 AI SaaS 风格的品牌落地页——Hero 首屏、AI 工具展示、本地商家解决方案、视频号 POI 团购服务介绍、商家案例、合作咨询。
+- **AI 团购套餐生成器（`/#/generator`）**：输入门店信息，AI（本地规则引擎）自动生成 3 套适合上架视频号 POI 团购的套餐方案。
+- **纯前端**：Vue 3 + Vite，无数据库、无登录、无外部 API，部署到 Cloudflare Pages 即开即用。
 
 ## 本地运行
 
@@ -17,14 +17,62 @@ npm run dev     # 启动开发服务，浏览器打开 http://localhost:5173
 
 ```bash
 npm run build   # 生产构建，产物输出到 dist/
-npm test        # 生成逻辑回归测试（131 项断言）
+npm test        # 生成逻辑回归测试（684 项断言，其中 1 项为概率性随机检查，偶发失败属正常）
 npm run preview # 本地预览构建产物
 ```
 
+## 页面路由（hash 模式）
+
+| 路径 | 页面 | 说明 |
+|---|---|---|
+| `/#/` | 官网首页 | 品牌落地页（浅色主题） |
+| `/#/generator` | AI 团购套餐生成器 | 免费引流工具（深色主题，不消耗积分） |
+| `/#/tool/:toolId` | AI 工具 | 口播/探店/营销/海报生成器（浅色主题，当前免费，图片/视频收费预留） |
+
+> 官网首页内锚点（AI工具 / 解决方案 / POI团购 / 商家案例 / 合作咨询）为页面内平滑滚动，非独立路由。
+
+## 收费模式（当前免费 + 收费预留）
+
+- **当前状态**：5 个文案类工具**免费**（团购套餐生成器 + 口播/探店/营销/海报提示词）；**AI 海报生成器收费**（20 积分/张，定价待运营填写）；**宣传视频生成器**界面与收费框架已就绪、API 后补（当前提示"即将上线"，不扣费）。
+- **收费机制**：积分/卡密体系已激活——用户充值后由运营下发卡密，兑换成积分，收费工具按次扣积分（积分不足引导兑换）。导航积分徽章、兑换卡密/充值弹窗可用。
+- **在线充值（自动到账）**：弹窗「在线充值」选套餐 → 支付宝支付 → 回调自动加积分到账户（无需卡密）。需配置支付宝密钥（`ALIPAY_APP_ID` / `ALIPAY_PRIVATE_KEY` / `ALIPAY_PUBLIC_KEY`，见 `worker/README.md`）；未配置时提示改用卡密。
+- **免费工具也走 Worker 代理**：免费 ≠ 无 AI 调用，5 个工具的 AI 调用仍由 Worker 代理（`AI_API_KEY` 只存 Secret），并记录 `ai_calls` 使用量、限流防滥用。
+- **配置**：后端 `worker/src/config.js`（工具/积分定价/AI 端点，后端为准）+ 前端 `src/config/siteConfig.js` 的 `billing`（同步展示）。
+  - **积分定价**（poster_image 海报 / promo_video 视频）：在 `worker/src/config.js` 的 `tools` 里填写 `points`（当前为占位示例 20/50）。
+  - **图片 API**：`IMAGE_API_KEY`（Secret）+ `IMAGE_BASE_URL` / `IMAGE_MODEL`（OpenAI 兼容 /images/generations）。
+  - **视频 API**：后补，接入时配置 `VIDEO_API_KEY` + `VIDEO_BASE_URL` 并实现异步任务（提交→轮询）。
+- **后端部署**：Cloudflare Worker + D1，完整步骤见 [`worker/README.md`](worker/README.md)。
+- **生成卡密**（运营侧，收费工具上线后使用）：
+  ```bash
+  node worker/scripts/gen-cards.mjs --points 100 --count 10 --api https://tools.sjcstone.cn/api --key <ADMIN_KEY>
+  ```
+- **本地联调前端**：先 `cd worker && npx wrangler dev --local`，再 `VITE_API_BASE=http://localhost:8787/api npm run dev`。
+
 ## 上线前必改
 
-1. **服务商/代理商授权**（可选，当前默认不显示任何联系方式）：编辑 `src/config/agentConfig.js`，把 `showContact` 置为 `true` 并填写 `agentName` / `contactWechat` / `contactQrCode` 后，页面底部会显示服务商名称、微信号或二维码；保持 `false` 则不显示任何联系方式。
-2. **底部说明文字**：默认已为中性文案，如需调整改 `src/data/rules.js` 里的 `FOOTER_NOTICE`。
+### 1. 官网品牌与联系信息（上线前必改）
+
+编辑 `src/config/siteConfig.js`：
+
+- `brandName` — 品牌名（导航 / Hero / 页脚展示）
+- `brandSlogan` — 品牌定位语（Hero 首屏小标签）
+- `agentName` — 服务商 / 代理商名称
+- `contactWechat` — 合作咨询微信号（**预留位**：上线前替换为真实微信号；留空则隐藏微信号行）
+- `contactQrCode` — 商务二维码图片路径（**预留位**：把二维码图片放到 `public/`，如 `/qr-contact.png`，再填写该路径；留空显示占位图块）
+- `contactEmail` — 客服邮箱（可选）
+- `targetUsers` — Hero 首屏目标用户三列（本地实体商家 / 视频号服务商 / 地推团队）
+
+> 页面不展示任何虚假统计数字；商家案例区的数据为演示占位，上线前请替换为真实合作案例。
+
+> 合作咨询表单为**纯前端演示**：提交后仅显示成功提示，不会发送任何数据。接入真实后端后再对接提交接口。
+
+### 2. 商家案例数据（可选）
+
+`src/components/landing/CasesSection.vue` 中的案例为**方向示意内容**，正式上线前请替换为真实合作商家数据与授权素材。
+
+### 3. 服务商/代理商授权（生成器页底部，可选）
+
+编辑 `src/config/agentConfig.js`，把 `showContact` 置为 `true` 并填写 `agentName` / `contactWechat` / `contactQrCode` 后，生成器页面底部会显示服务商名称、微信号或二维码；保持 `false` 则不显示任何联系方式。
 
 ## 上传到 GitHub
 
@@ -34,7 +82,7 @@ npm run preview # 本地预览构建产物
 ```bash
 git init
 git add .
-git commit -m "feat: AI团购套餐生成器（纯前端，Cloudflare Pages 就绪）"
+git commit -m "feat: 本地商家AI增长平台（官网落地页 + AI团购套餐生成器）"
 git branch -M main
 git remote add origin https://github.com/<你的用户名>/<仓库名>.git
 git push -u origin main
@@ -90,17 +138,17 @@ git push -u origin main
 
 ## 后期规划
 
-`tools.sjcstone.cn` 定位为「本地商家实用工具箱」，当前版本保持单工具页面（打开即直达 AI团购套餐生成器），不做多页面复杂系统。
+`tools.sjcstone.cn` 定位为「本地商家 AI 增长平台」：官网首页负责品牌与获客，工具页承载实际功能。
 
-- 后期 `tools.sjcstone.cn` 可升级为**本地商家实用工具箱首页**（工具入口列表页）
-- 当前 **AI团购套餐生成器** 作为工具箱的第一个工具
-- 后续可继续增加工具：
-  - 利润计算器
-  - 视频脚本生成器
-  - 门店诊断工具
-  - 朋友圈文案生成器
+- 当前：官网落地页 + AI 团购套餐生成器（第一个工具）
+- 后续可继续增加工具（官网「AI 工具」区已预留入口位，`敬请期待` 标签待逐个点亮）：
+  - AI 短视频脚本生成器
+  - AI 朋友圈文案生成器
+  - 门店经营诊断
+  - 团购利润计算器
+  - AI 客服话术助手
 
-新增工具的方式（架构已预留，无需重做项目）：在 `src/views/` 新建页面组件 → 在 `src/router/index.js` 的 `routes` 数组中追加一项路由 → 重新构建部署即可。
+新增工具的方式（架构已预留，无需重做项目）：在 `src/views/` 新建页面组件 → 在 `src/router/index.js` 的 `routes` 数组中追加一项路由 → 把 `src/components/landing/ToolsSection.vue` 中对应工具的 `live` 置为 `true` 并填入入口路径 → 重新构建部署即可。
 
 ## 项目结构
 
@@ -108,18 +156,41 @@ git push -u origin main
 ├── index.html / vite.config.js / package.json
 ├── public/favicon.svg
 ├── src/
-│   ├── main.js / App.vue           # 入口 + 背景 + 全局 Toast
-│   ├── router/index.js             # 路由注册表（多工具扩展位 + /admin 预留）
-│   ├── config/agentConfig.js       # 服务商授权配置（默认不显示联系方式）
-│   ├── styles/global.css           # 深色蓝紫渐变玻璃拟态主题
+│   ├── main.js / App.vue           # 入口 + 外壳（按路由切换深/浅主题）+ 全局 Toast
+│   ├── router/index.js             # 路由注册表（官网首页 + 工具路由 + /admin 预留）
+│   ├── config/
+│   │   ├── siteConfig.js           # 官网配置（品牌/微信号/二维码/目标用户/计费规则，上线前必改）
+│   │   └── agentConfig.js          # 生成器页服务商授权配置（默认不显示联系方式）
+│   ├── styles/
+│   │   ├── global.css              # 工具页深色蓝紫渐变玻璃拟态主题
+│   │   └── landing.css             # 官网浅色高端 SaaS 主题（body.landing 时生效）
 │   ├── data/rules.js               # 生成规则知识库（内容池/价格/文案/底部说明）
 │   ├── data/poiCategories.js       # POI 行业大类 + 二级类目表（可替换为正式类目表）
-│   ├── utils/generator.js          # 套餐生成引擎
-│   ├── utils/analytics.js          # 统计埋点函数（当前仅 console.log，预留多平台）
-│   ├── composables/useToast.js     # 全局轻提示
-│   ├── components/                 # 7 个组件
-│   └── views/GeneratorView.vue     # 首页
-└── test/generator.test.mjs         # 回归测试
+│   ├── utils/
+│   │   ├── generator.js            # 套餐生成引擎
+│   │   ├── analytics.js            # 统计埋点函数（当前仅 console.log，预留多平台）
+│   │   └── api.js                  # 计费 API 客户端（fetch 封装，API_BASE 可配）
+│   ├── composables/
+│   │   ├── useToast.js             # 全局轻提示
+│   │   ├── useInView.js            # 官网滚动显现动画
+│   │   └── useAuth.js              # 登录态 + 点数（模块级单例）
+│   ├── views/
+│   │   ├── HomeView.vue            # 官网首页（组合各 section）
+│   │   ├── ToolView.vue            # 付费 AI 工具通用页（/#/tool/:id，调 AI 代理扣积分）
+│   │   └── GeneratorView.vue       # AI 团购套餐生成器（/#/generator，免费引流）
+│   ├── components/
+│   │   ├── landing/                # 官网区块组件（导航/各 section/兑换卡密弹层等）
+│   │   └── ...                     # 工具页组件（7 个）
+│   └── config/agentConfig.js
+├── worker/                         # 积分计费 + AI 代理后端（Cloudflare Worker + D1，见 worker/README.md）
+│   ├── schema.sql                  # D1 表结构（users/cards/transactions/ai_calls）
+│   ├── src/index.js                # API 全部逻辑（零运行时依赖；AI Key 只读 Secret）
+│   ├── src/config.js               # 工具积分/卡密套餐/AI 端点配置（后端为准）
+│   └── scripts/gen-cards.mjs       # 运营脚本：批量生成卡密
+└── test/
+    ├── generator.test.mjs          # 生成逻辑回归测试（684 项断言）
+    └── billing-flow.test.mjs       # 计费/AI 代理完整流程冒烟测试（38 项断言，node:sqlite 模拟 D1）
+```
 ```
 
 Web Analytics enabled

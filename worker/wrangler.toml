@@ -1,0 +1,20 @@
+# Cloudflare Workers 配置 — 点数计费 API
+# 文档见 worker/README.md
+
+name = "poi-billing-api"
+main = "src/index.js"
+compatibility_date = "2024-11-01"
+
+# D1 数据库绑定
+[[d1_databases]]
+binding = "DB"
+database_name = "poi-billing"
+# 创建数据库后替换为真实 ID：
+#   npx wrangler d1 create poi-billing
+database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+
+# 生产建议：AUTH_SECRET / ADMIN_KEY 不要写在仓库，用 Secrets 配置：
+#   npx wrangler secret put AUTH_SECRET
+#   npx wrangler secret put ADMIN_KEY
+[vars]
+# ALLOW_ORIGIN = "https://tools.sjcstone.cn"

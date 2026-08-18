@@ -15,8 +15,26 @@ const routes = [
   {
     path: '/',
     name: 'home',
+    component: () => import('../views/HomeView.vue'),
+    meta: { title: '视频号POI商家AI平台', landing: true }
+  },
+  {
+    path: '/generator',
+    name: 'generator',
     component: () => import('../views/GeneratorView.vue'),
     meta: { title: 'AI团购套餐生成器' }
+  },
+  {
+    path: '/tool/:toolId',
+    name: 'tool',
+    component: () => import('../views/ToolView.vue'),
+    meta: { title: 'AI 工具', landing: true }
+  },
+  {
+    path: '/pay/result',
+    name: 'pay-result',
+    component: () => import('../views/PayResultView.vue'),
+    meta: { title: '支付结果', landing: true }
   },
   {
     path: '/:pathMatch(.*)*',
@@ -31,7 +49,7 @@ const router = createRouter({
 
 router.afterEach((to) => {
   const title = to.meta?.title
-  document.title = title ? `${title} · 本地商家实用工具箱` : '本地商家实用工具箱'
+  document.title = title ? `${title} · 视频号POI商家AI平台` : '视频号POI商家AI平台'
 })
 
 export default router

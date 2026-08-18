@@ -1,0 +1,15 @@
+{
+  "name": "poi-billing-api",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "视频号POI商家AI平台 · 点数计费 API（Cloudflare Workers + D1，零运行时依赖）",
+  "scripts": {
+    "dev": "wrangler dev --local",
+    "deploy": "wrangler deploy",
+    "cards": "node scripts/gen-cards.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "^3.90.0"
+  }
+}

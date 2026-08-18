@@ -4,6 +4,13 @@ const SCOPES = ['餐饮', '美业', '酒店民宿', '休闲娱乐', '零售', '�
 
 <template>
   <header class="brand">
+    <router-link to="/" class="brand__back">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M19 12H5M11 6l-6 6 6 6" />
+      </svg>
+      返回官网
+    </router-link>
+
     <div class="brand__logo" aria-hidden="true">
       <span class="brand__logo-spark">✦</span>
     </div>
@@ -24,8 +31,32 @@ const SCOPES = ['餐饮', '美业', '酒店民宿', '休闲娱乐', '零售', '�
 
 <style scoped>
 .brand {
+  position: relative;
   text-align: center;
   padding: 22px 4px 10px;
+}
+
+.brand__back {
+  position: absolute;
+  top: 6px;
+  right: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-dim);
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--card-border);
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: color 0.18s ease, border-color 0.18s ease;
+}
+
+.brand__back:hover {
+  color: var(--text);
+  border-color: var(--card-border-strong);
 }
 
 .brand__logo {
