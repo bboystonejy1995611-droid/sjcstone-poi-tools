@@ -10,6 +10,7 @@ const emit = defineEmits(['update:modelValue', 'redeemed'])
 
 const { points, redeem, payCreate } = useAuth()
 const billing = siteConfig.billing
+const onlinePaymentEnabled = billing.onlinePaymentEnabled
 
 const tab = ref('redeem')
 const cardCode = ref('')
@@ -113,6 +114,7 @@ async function copyWechat() {
               兑换卡密
             </button>
             <button
+              v-if="onlinePaymentEnabled"
               type="button"
               class="amodal__tab"
               :class="{ 'amodal__tab--active': tab === 'pay' }"
@@ -173,8 +175,8 @@ async function copyWechat() {
             </div>
           </div>
 
-          <!-- 在线充值 -->
-          <div v-else>
+          <!-- 在线充值（onlinePaymentEnabled=true 时才显示） -->
+          <div v-else-if="onlinePaymentEnabled">
             <p class="amodal__sub">选择套餐，支付宝支付成功后积分自动到账</p>
 
             <p v-if="payError" class="amodal__msg amodal__msg--err">{{ payError }}</p>
