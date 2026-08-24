@@ -85,6 +85,7 @@ function openRedeem() {
           <button type="button" class="lnav__link lnav__link--btn" @click="openRedeem">
             兑换卡密
           </button>
+          <router-link class="lnav__link lnav__link--btn" to="/generations">我的生成</router-link>
           <router-link class="l-btn l-btn--primary lnav__cta" to="/generator">免费使用</router-link>
         </div>
       </nav>

@@ -5,7 +5,7 @@
  * 积分绑定该 token。请勿清除浏览器数据，否则积分丢失（暂不做找回）。
  */
 import { reactive, computed } from 'vue'
-import { apiGet, apiPost, getToken, setToken } from '../utils/api'
+import { apiGet, apiPost, apiDelete, getToken, setToken } from '../utils/api'
 
 const state = reactive({
   token: getToken(),
@@ -71,6 +71,16 @@ export function useAuth() {
     return data
   }
 
+  /** 我的生成记录（type: all | image | video） */
+  async function listGenerations(type = 'all') {
+    return apiGet(`/api/generations?type=${type}`)
+  }
+
+  /** 删除生成记录（含 R2 文件） */
+  async function deleteGeneration(taskId) {
+    return apiDelete(`/api/generations/${taskId}`)
+  }
+
   /** 创建充值订单，返回 { orderNo, payUrl }（支付宝） */
   async function payCreate(plan) {
     return apiPost('/api/pay/create', { plan })
@@ -90,5 +100,5 @@ export function useAuth() {
     setToken('')
   }
 
-  return { state, isLoggedIn, points, init, ensureAuth, redeem, generate, consume, payCreate, refresh, logout }
+  return { state, isLoggedIn, points, init, ensureAuth, redeem, generate, consume, listGenerations, deleteGeneration, payCreate, refresh, logout }
 }

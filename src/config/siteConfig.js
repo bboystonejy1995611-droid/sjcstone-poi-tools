@@ -72,7 +72,7 @@ export const siteConfig = {
       { id: 'visit_script', name: 'AI探店脚本生成器', free: true, desc: '探店视频脚本，免费使用', placeholder: '输入门店信息，如：奶茶店·步行街店·新开业', route: '/tool/visit_script' },
       { id: 'marketing_plan', name: 'AI营销方案生成器', free: true, desc: '完整营销方案，免费使用', placeholder: '输入门店类型与目标，如：美甲店·想拉新客', route: '/tool/marketing_plan' },
       { id: 'poster_prompt', name: 'AI海报提示词生成器', free: true, desc: '海报 AI 提示词，免费使用', placeholder: '输入海报主题，如：双十一火锅套餐促销', route: '/tool/poster_prompt' },
-      { id: 'poster_image', name: 'AI海报生成器', points: 20, type: 'image', desc: '一句话生成门店活动海报图片', placeholder: '输入海报主题与风格，如：双十一火锅套餐促销，喜庆热闹风格，带价格标签', route: '/tool/poster_image' },
+      { id: 'poster_image', name: 'AI海报生成器', points: 600, type: 'image', desc: '一句话生成门店活动海报图片', placeholder: '输入海报主题与风格，如：双十一火锅套餐促销，喜庆热闹风格，带价格标签', route: '/tool/poster_image' },
       { id: 'promo_video', name: '宣传视频生成器', points: 50, type: 'video', desc: '生成门店宣传视频（即将上线）', placeholder: '输入视频主题，如：新店开业 30 秒宣传片', route: '/tool/promo_video' }
     ],
 

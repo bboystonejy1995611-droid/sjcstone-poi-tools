@@ -47,3 +47,4 @@ export async function api(path, options = {}) {
 export const apiGet = (path) => api(path, { method: 'GET' })
 export const apiPost = (path, data) =>
   api(path, { method: 'POST', body: JSON.stringify(data || {}) })
+export const apiDelete = (path) => api(path, { method: 'DELETE' })

@@ -31,6 +31,12 @@ const routes = [
     meta: { title: 'AI 工具', landing: true }
   },
   {
+    path: '/generations',
+    name: 'generations',
+    component: () => import('../views/GenerationListView.vue'),
+    meta: { title: '我的生成', landing: true }
+  },
+  {
     path: '/pay/result',
     name: 'pay-result',
     component: () => import('../views/PayResultView.vue'),
