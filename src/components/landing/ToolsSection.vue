@@ -51,7 +51,7 @@ const tools = [
   },
   {
     name: 'AI海报生成器',
-    points: 20,
+    points: 600,
     desc: '一句话直接生成门店活动海报图片，选风格、配文案，即出成品图。',
     to: '/tool/poster_image',
     tint: 'rgba(49, 94, 251, 0.1)',
