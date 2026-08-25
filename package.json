@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "本地商家实用工具箱 - AI团购套餐生成器（纯前端，Cloudflare Pages 就绪）",
+  "description": "视频号 POI 商家 AI 工具平台（Cloudflare Pages + Worker + D1）",
   "engines": {
     "node": ">=18.0.0 || >=20.0.0"
   },
@@ -11,7 +11,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "esbuild test/generator.test.mjs --bundle --format=esm --platform=node --outfile=test/.out.mjs && node test/.out.mjs && node test/billing-flow.test.mjs",
+    "test": "esbuild test/generator.test.mjs --bundle --format=esm --platform=node --outfile=test/.out.mjs && node test/.out.mjs && node test/billing-flow.test.mjs && node test/admin.test.mjs && node test/api-client.test.mjs",
     "test:billing": "node test/billing-flow.test.mjs"
   },
   "dependencies": {

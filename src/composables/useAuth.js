@@ -5,7 +5,7 @@
  * 积分绑定该 token。请勿清除浏览器数据，否则积分丢失（暂不做找回）。
  */
 import { reactive, computed } from 'vue'
-import { apiGet, apiPost, apiDelete, getToken, setToken } from '../utils/api'
+import { apiGet, apiPost, apiDelete, getToken, setToken } from '../utils/api.js'
 
 const state = reactive({
   token: getToken(),
@@ -34,11 +34,14 @@ export function useAuth() {
     try {
       const data = await apiGet('/api/me')
       state.user = data.user
-    } catch {
-      // token 失效：重新获取匿名身份
-      setToken('')
-      state.token = ''
-      return init()
+    } catch (error) {
+      // 只有 Worker 明确返回 401 才说明 token 失效。
+      // 网络波动或 5xx 时必须保留原 token，否则会让有余额的游客身份永久丢失。
+      if (error?.status === 401) {
+        setToken('')
+        state.token = ''
+        return init()
+      }
     }
     state.ready = true
   }

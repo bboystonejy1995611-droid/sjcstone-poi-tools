@@ -2,9 +2,9 @@
  * test/billing-flow.test.mjs — 卡密/积分/AI代理 完整流程冒烟测试
  *
  * 用 node:sqlite 内存库模拟 Cloudflare D1，直接调用 worker/src/index.js 的 fetch，
- * mock 第三方 AI（文本 + 图片）接口，验证：
- * 匿名身份 → 卡密兑换 → 免费工具（不扣分）→ 收费工具（海报扣分/退款）→
- * 视频未配置（501）→ 积分不足（409）→ 限流 → 边界。
+ * mock Grsai GPT Image 接口，验证：
+ * 匿名身份 → 固定面额卡密兑换 → 海报扣 600 分/失败退款 →
+ * 生成历史与同域图片代理 → 限流 → 管理鉴权与支付兼容。
  *
  * 运行：node test/billing-flow.test.mjs
  */
@@ -58,9 +58,7 @@ const env = {
   DB,
   AUTH_SECRET: 'test-secret',
   ADMIN_KEY: 'test-admin-key',
-  AI_API_KEY: 'sk-test', // 测试用；真实环境必须是 Worker Secret
-  AI_BASE_URL: 'https://mock-ai.example/v1',
-  IMAGE_API_KEY: 'sk-image-test' // 测试用；真实环境必须是 Worker Secret
+  GRSAI_API_KEY: 'sk-grsai-test' // 测试用；真实环境必须是 Worker Secret
 }
 
 /* ---------- 支付宝密钥（测试用 RSA 密钥对，模拟应用私钥 + 支付宝公钥） ---------- */
@@ -80,14 +78,14 @@ env.ALIPAY_APP_ID = '2021000000000000'
 env.ALIPAY_PRIVATE_KEY = privatePem
 env.ALIPAY_PUBLIC_KEY = publicPem
 
-/* ---------- mock 第三方 AI（文本 + 图片） ---------- */
+/* ---------- mock Grsai GPT Image + 生成图片文件 ---------- */
 const realFetch = globalThis.fetch
-let mockAiStatus = 200
-let mockAiEmpty = false
 let mockImageStatus = 200
+let lastImageRequest = null
 globalThis.fetch = async (url, opts) => {
   const urlStr = String(url)
   if (urlStr.includes('/images/generations')) {
+    lastImageRequest = { url: urlStr, opts, body: JSON.parse(opts.body) }
     if (mockImageStatus !== 200) {
       return new Response('{"error":"image upstream down"}', { status: mockImageStatus })
     }
@@ -96,20 +94,11 @@ globalThis.fetch = async (url, opts) => {
       { status: 200, headers: { 'Content-Type': 'application/json' } }
     )
   }
-  if (urlStr.includes('/chat/completions')) {
-    if (mockAiStatus !== 200) {
-      return new Response('{"error":"upstream down"}', { status: mockAiStatus })
-    }
-    if (mockAiEmpty) {
-      return new Response(JSON.stringify({ choices: [] }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' }
-      })
-    }
-    return new Response(
-      JSON.stringify({ choices: [{ message: { content: '【AI 生成的营销文案】测试内容' } }] }),
-      { status: 200, headers: { 'Content-Type': 'application/json' } }
-    )
+  if (urlStr === 'https://img.example/poster-1.png') {
+    return new Response(new Uint8Array([137, 80, 78, 71]), {
+      status: 200,
+      headers: { 'Content-Type': 'image/png' }
+    })
   }
   return realFetch(url, opts)
 }
@@ -138,8 +127,25 @@ async function call(pathname, { method = 'GET', body, token, adminKey } = {}) {
     headers,
     body: body ? JSON.stringify(body) : undefined
   })
-  const res = await worker.fetch(req, env)
-  return { status: res.status, json: await res.json() }
+  try {
+    const res = await worker.fetch(req, env)
+    return { status: res.status, json: await res.json() }
+  } catch (error) {
+    return { status: 599, json: { ok: false, error: { code: 'unhandled_worker_error', message: error.message } } }
+  }
+}
+
+async function callRaw(pathname, { method = 'GET', body, token, adminKey } = {}) {
+  const headers = {}
+  if (body) headers['Content-Type'] = 'application/json'
+  if (token) headers.Authorization = `Bearer ${token}`
+  if (adminKey) headers['X-Admin-Key'] = adminKey
+  const req = new Request(`http://localhost${pathname}`, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined
+  })
+  return worker.fetch(req, env)
 }
 
 const txnCount = () => db.prepare('SELECT COUNT(*) AS c FROM transactions').get().c
@@ -153,15 +159,14 @@ assertEq(typeof r.json.data.token, 'string', '返回 token')
 const token = r.json.data.token
 assertEq(r.json.data.user.points, 0, '新匿名用户初始 0 积分')
 
-console.log('\n▶ 1b. 免费工具：0 积分也可调用')
+console.log('\n▶ 1b. Worker 只接受 Grsai 图片工具；免费文字工具留在浏览器本地')
 r = await call('/api/ai/generate', {
   method: 'POST',
   token,
   body: { tool: 'oral_script', messages: [{ role: 'user', content: 'x' }] }
 })
-assertEq(r.status, 200, '0 积分调用免费工具成功')
-assertEq(r.json.data.deducted, 0, '免费工具不扣积分')
-assertEq(r.json.data.points, 0, '积分不变')
+assertEq(r.status, 400, '后端拒绝非图片 AI 工具')
+assertEq(r.json.error.code, 'unknown_tool', '只保留 Grsai 图片工具契约')
 
 console.log('\n▶ 1c. 收费工具边界：0 积分 409；视频未配置 501')
 r = await call('/api/ai/generate', {
@@ -183,46 +188,90 @@ console.log('\n▶ 2. 管理端生成卡密')
 r = await call('/api/admin/cards', { method: 'POST', body: { points: 100, count: 2 }, adminKey: 'wrong' })
 assertEq(r.status, 401, '错误管理密钥被拒')
 r = await call('/api/admin/cards', { method: 'POST', body: { points: 100, count: 2 }, adminKey: 'test-admin-key' })
+assertEq(r.status, 400, '拒绝非固定面额卡密')
+r = await call('/api/admin/cards', { method: 'POST', body: { points: 50000, count: 2 }, adminKey: 'test-admin-key' })
 assertEq(r.status, 200, '生成卡密成功')
 const cards = r.json.data.cards
 assertEq(cards.length, 2, '生成 2 张卡密')
-assertEq(cards[0].points, 100, '面额 100 积分')
+assertEq(cards[0].points, 50000, '面额 50000 积分')
+r = await call('/api/admin/cards', { method: 'POST', body: { points: 100000, count: 1 }, adminKey: 'test-admin-key' })
+assertEq(r.status, 200, '支持 100000 积分固定面额')
+
+console.log('  · 单批 100 张不超过 D1 每次调用查询数限制')
+const prepareBeforeCardBatch = DB.prepare
+let cardInsertQueries = 0
+DB.prepare = (sql) => {
+  if (/^INSERT INTO cards/i.test(sql.trim())) {
+    cardInsertQueries++
+    if (cardInsertQueries > 50) throw new Error('mock D1 50 queries per invocation limit')
+  }
+  return prepareBeforeCardBatch.call(DB, sql)
+}
+r = await call('/api/admin/cards', { method: 'POST', body: { points: 50000, count: 100 }, adminKey: 'test-admin-key' })
+DB.prepare = prepareBeforeCardBatch
+assertEq(r.status, 200, '可原子生成 100 张卡密')
+assertEq(r.json.data?.cards?.length, 100, '100 张卡密全部返回且无部分结果')
+assertEq(cardInsertQueries <= 2, true, '100 张卡密最多使用 2 个插入语句')
 
 console.log('\n▶ 3. 兑换卡密（一次性）')
 r = await call('/api/cards/redeem', { method: 'POST', body: { code: 'NOPE-XXXXXXXX-XXXXXXXX' }, token })
 assertEq(r.status, 404, '不存在的卡密被拒')
+
+const batchBeforeRedeemFailure = DB.batch
+DB.batch = () => { throw new Error('mock redeem batch failure') }
+r = await call('/api/cards/redeem', { method: 'POST', body: { code: cards[1].code }, token })
+DB.batch = batchBeforeRedeemFailure
+assertEq(r.status, 500, '兑换原子批次失败返回 500')
+assertEq(db.prepare('SELECT status FROM cards WHERE code = ?').get(cards[1].code).status, 'new', '到账失败时卡密仍可用')
+assertEq(userPoints(), 0, '到账失败时余额不变')
+
 r = await call('/api/cards/redeem', { method: 'POST', body: { code: cards[0].code }, token })
 assertEq(r.status, 200, '兑换成功')
-assertEq(r.json.data.added, 100, '增加 100 积分')
+assertEq(r.json.data.added, 50000, '增加 50000 积分')
 r = await call('/api/cards/redeem', { method: 'POST', body: { code: cards[0].code }, token })
 assertEq(r.status, 409, '同一卡密重复兑换被拒（幂等）')
 r = await call('/api/me', { token })
-assertEq(r.json.data.user.points, 100, '重复兑换后余额不变（无双花）')
+assertEq(r.json.data.user.points, 50000, '重复兑换后余额不变（无双花）')
+assertEq(typeof r.json.data.user.anonId, 'string', '返回当前游客 ID')
 
-console.log('\n▶ 4. 免费工具不消耗已兑换积分')
-r = await call('/api/ai/generate', {
-  method: 'POST',
-  token,
-  body: { tool: 'visit_script', messages: [{ role: 'user', content: 'x' }] }
-})
-assertEq(r.status, 200, '免费工具调用成功')
-assertEq(r.json.data.deducted, 0, '不扣积分')
-assertEq(r.json.data.points, 100, '兑换的 100 积分原样保留')
-assertEq(txnCount(), 1, '不产生扣费流水（仍只有兑换 1 条）')
-
-console.log('\n▶ 4b. 海报生成（收费）：成功扣分并返回图片')
+console.log('\n▶ 4. Grsai 海报生成：成功扣 600 分并创建历史记录')
 r = await call('/api/ai/generate', {
   method: 'POST',
   token,
   body: { tool: 'poster_image', prompt: '火锅促销海报，喜庆风格' }
 })
 assertEq(r.status, 200, '海报生成成功')
-assertEq(r.json.data.deducted, 20, '扣除 20 积分（config 占位定价）')
-assertEq(r.json.data.points, 80, '余额 80 积分')
-assertEq(r.json.data.imageUrl, 'https://img.example/poster-1.png', '返回图片 URL')
+assertEq(r.json.data.deducted, 600, '固定扣除 600 积分')
+assertEq(r.json.data.points, 49400, '余额 49400 积分')
+assertEq(r.json.data.imageUrl.startsWith('/api/generations/'), true, '返回同域鉴权图片路径')
+assertEq(r.json.data.imageUrl.endsWith('/file'), true, '图片路径指向文件代理接口')
+assertEq(typeof r.json.data.taskId, 'string', '返回生成任务 ID')
+assertEq(lastImageRequest.url, 'https://grsaiapi.com/v1/images/generations', '只调用 Grsai 官方节点')
+assertEq(lastImageRequest.opts.headers.Authorization, 'Bearer sk-grsai-test', '使用 GRSAI_API_KEY Secret')
+assertEq(lastImageRequest.body.model, 'gpt-image-2', '固定使用 gpt-image-2')
+assertEq(lastImageRequest.body.size, '1024x1024', '固定生成 1024x1024 图片')
+assertEq(lastImageRequest.body.response_format, 'url', '请求 URL 响应格式')
 assertEq(txnCount(), 2, '新增 1 条扣费流水')
 
-console.log('\n▶ 4c. 海报生成（收费）：失败自动退款')
+const generatedTaskId = r.json.data.taskId
+r = await call('/api/generations?type=image', { token })
+assertEq(r.status, 200, '可读取当前游客的生成历史')
+assertEq(r.json.data.items.length, 1, '历史包含刚生成的图片')
+assertEq(r.json.data.items[0].task_id, generatedTaskId, '历史任务 ID 正确')
+assertEq(r.json.data.items[0].prompt, '火锅促销海报，喜庆风格', '历史保留图片描述')
+assertEq(r.json.data.items[0].model, 'gpt-image-2', '历史保留 Grsai 模型名')
+let mediaRes = await callRaw(`/api/generations/${generatedTaskId}/file`, { token })
+assertEq(mediaRes.status, 200, '可通过同域鉴权接口读取图片')
+assertEq(mediaRes.headers.get('Content-Type'), 'image/png', '保留图片 Content-Type')
+
+const secondAnon = await call('/api/auth/anonymous', { method: 'POST' })
+const secondToken = secondAnon.json.data.token
+r = await call('/api/generations?type=image', { token: secondToken })
+assertEq(r.json.data.items.length, 0, '其他游客看不到生成历史')
+mediaRes = await callRaw(`/api/generations/${generatedTaskId}/file`, { token: secondToken })
+assertEq(mediaRes.status, 404, '其他游客不能读取图片')
+
+console.log('\n▶ 4b. 海报生成失败自动退款')
 mockImageStatus = 500
 const txnBeforeFail = txnCount()
 r = await call('/api/ai/generate', {
@@ -232,66 +281,93 @@ r = await call('/api/ai/generate', {
 })
 assertEq(r.status, 502, '图片服务错误返回 502')
 assertEq(r.json.error.code, 'ai_error', '错误码 ai_error')
-assertEq(userPoints(), 80, '积分已退还（余额不变）')
+assertEq(userPoints(), 49400, '积分已退还（余额不变）')
 assertEq(txnCount(), txnBeforeFail + 2, '扣费+退款 2 条流水（可对账）')
 assertEq(db.prepare('SELECT status FROM ai_calls ORDER BY id DESC LIMIT 1').get().status, 'error', 'ai_calls 标记 error')
 mockImageStatus = 200
 
-console.log('\n▶ 5. 文本 AI 失败：免费工具无扣费则无退款')
-mockAiStatus = 500
-const txnBeforeTextFail = txnCount()
-r = await call('/api/ai/generate', {
-  method: 'POST',
-  token,
-  body: { tool: 'oral_script', messages: [{ role: 'user', content: 'x' }] }
-})
-assertEq(r.status, 502, 'AI 上游错误返回 502')
-assertEq(userPoints(), 80, '免费工具失败不影响积分')
-assertEq(txnCount(), txnBeforeTextFail, '无退款流水')
-mockAiStatus = 200
-
-console.log('\n▶ 5b. AI 空响应视为失败（免费工具无退款）')
-mockAiEmpty = true
-r = await call('/api/ai/generate', {
-  method: 'POST',
-  token,
-  body: { tool: 'oral_script', messages: [{ role: 'user', content: 'x' }] }
-})
-assertEq(r.status, 502, '空响应返回 502')
-assertEq(userPoints(), 80, '积分不变')
-mockAiEmpty = false
-
-console.log('\n▶ 6. AI 调用限流（每分钟 10 次，含图片/文本）')
-const pointsBefore429 = userPoints()
-let ok429 = false
-let okCalls = 0
-for (let i = 0; i < 12; i++) {
-  const rr = await call('/api/ai/generate', {
-    method: 'POST',
-    token,
-    body: { tool: 'poster_prompt', messages: [{ role: 'user', content: 'x' }] }
-  })
-  if (rr.status === 429) {
-    ok429 = true
-    break
+console.log('\n▶ 4c. 扣分流水写入失败时原子回滚余额')
+const prepareBeforeChargeFailure = DB.prepare
+let failConsumeLedger = true
+DB.prepare = (sql) => {
+  const stmt = prepareBeforeChargeFailure.call(DB, sql)
+  if (failConsumeLedger && /INSERT INTO transactions/i.test(sql) && /'consume'/i.test(sql)) {
+    return {
+      ...stmt,
+      bind: (...args) => ({
+        run: () => {
+          failConsumeLedger = false
+          throw new Error('mock consume ledger failure')
+        }
+      })
+    }
   }
-  okCalls++
+  return stmt
 }
-assertEq(ok429, true, '达到上限后返回 429')
-assertEq(okCalls <= 10, true, `限流前成功调用不超过 10 次（实际 ${okCalls}）`)
+const pointsBeforeChargeFailure = userPoints()
+r = await call('/api/ai/generate', {
+  method: 'POST',
+  token,
+  body: { tool: 'poster_image', prompt: '扣分原子性测试' }
+})
+DB.prepare = prepareBeforeChargeFailure
+assertEq(r.status, 500, '消费流水失败返回 500')
+assertEq(userPoints(), pointsBeforeChargeFailure, '消费流水失败时 600 积分未丢失')
+
+console.log('\n▶ 4d. 生成已提交后余额读取失败仍返回成功任务')
+const prepareBeforePostCommitRead = DB.prepare
+let failPostCommitRead = true
+DB.prepare = (sql) => {
+  const stmt = prepareBeforePostCommitRead.call(DB, sql)
+  if (failPostCommitRead && sql.trim() === 'SELECT id, points FROM users WHERE id = ?') {
+    return {
+      ...stmt,
+      bind: (...args) => ({
+        first: () => {
+          failPostCommitRead = false
+          throw new Error('mock post-commit balance read failure')
+        }
+      })
+    }
+  }
+  return stmt
+}
+const pointsBeforePostCommitRead = userPoints()
+r = await call('/api/ai/generate', {
+  method: 'POST',
+  token,
+  body: { tool: 'poster_image', prompt: '提交后读取失败测试' }
+})
+DB.prepare = prepareBeforePostCommitRead
+assertEq(r.status, 200, '生成记录提交后读取余额失败仍返回 200')
+assertEq(typeof r.json.data?.taskId, 'string', '客户端仍拿到已付费任务 ID')
+assertEq(userPoints(), pointsBeforePostCommitRead - 600, '成功任务只扣 600 积分')
+const postCommitTaskId = r.json.data?.taskId
+if (postCommitTaskId) {
+  const cleanup = await call(`/api/generations/${postCommitTaskId}`, { method: 'DELETE', token })
+  assertEq(cleanup.status, 200, '清理提交后读取测试生成记录')
+}
+
+console.log('\n▶ 5. AI 调用限流（每分钟 10 次）')
+const pointsBefore429 = userPoints()
+for (let i = 0; i < 10; i++) {
+  db.prepare("INSERT INTO rate_limits (scope, key) VALUES ('ai', '1')").run()
+}
+r = await call('/api/ai/generate', {
+  method: 'POST',
+  token,
+  body: { tool: 'poster_image', prompt: '限流测试' }
+})
+assertEq(r.status, 429, '达到上限后返回 429')
 assertEq(userPoints(), pointsBefore429, '429 不影响积分')
 
-console.log('\n▶ 7. 参数与鉴权边界')
+console.log('\n▶ 6. 参数与鉴权边界')
 r = await call('/api/ai/generate', { method: 'POST', token, body: { tool: 'poster_image' } })
 assertEq(r.status, 400, '图片工具缺 prompt 被拒')
-r = await call('/api/ai/generate', { method: 'POST', token, body: { tool: 'oral_script' } })
-assertEq(r.status, 400, '文本工具缺 messages 被拒')
-r = await call('/api/consume', { method: 'POST', token, body: { feature: 'oral_script' } })
-assertEq(r.status, 400, '对免费工具调用扣分接口被拒（free_feature）')
 r = await call('/api/me', { token: 'abc.def' })
 assertEq(r.status, 401, '伪造 token 401')
 
-console.log('\n▶ 7b. 支付宝在线充值（下单 → 回调自动到账）')
+console.log('\n▶ 6b. 支付宝在线充值（下单 → 回调自动到账）')
 const pointsBeforePay = userPoints()
 r = await call('/api/pay/create', { method: 'POST', token, body: { plan: 'starter' } })
 assertEq(r.status, 200, '创建充值订单成功')
@@ -390,11 +466,15 @@ r = await call(`/api/pay/result?order_no=${orderNo}`, { token })
 assertEq(r.status, 200, '查询订单成功')
 assertEq(r.json.data.order.status, 'paid', '订单状态 paid')
 
-console.log('\n▶ 8. 未登录访问受保护接口')
+console.log('\n▶ 7. 删除生成记录与未登录边界')
+r = await call(`/api/generations/${generatedTaskId}`, { method: 'DELETE', token })
+assertEq(r.status, 200, '当前游客可删除自己的生成记录')
+r = await call('/api/generations?type=image', { token })
+assertEq(r.json.data.items.length, 0, '删除后历史为空')
 r = await call('/api/me')
 assertEq(r.status, 401, '未登录返回 401')
 
-console.log('\n▶ 9. 匿名签发 IP 限流（同一 IP 每分钟 ≤10 次）')
+console.log('\n▶ 8. 匿名签发 IP 限流（同一 IP 每分钟 ≤10 次）')
 let anon429 = false
 for (let i = 0; i < 10; i++) {
   const rr = await call('/api/auth/anonymous', { method: 'POST' })
@@ -408,8 +488,7 @@ assertEq(anon429, true, '连续签发达到上限后返回 429')
 /* ---------- 收尾 ---------- */
 globalThis.fetch = realFetch
 
-console.log('\n说明：poster_image/promo_video 积分定价为 config.js 占位（运营待填）；')
-console.log('promo_video（视频生成）API 后补，当前返回 501 不扣费；配置 VIDEO_API_KEY 后按异步任务模式实现。')
+console.log('\n说明：Worker 只代理 Grsai gpt-image-2；免费文字工具继续在浏览器本地生成。')
 
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`)
 process.exit(fail > 0 ? 1 : 0)

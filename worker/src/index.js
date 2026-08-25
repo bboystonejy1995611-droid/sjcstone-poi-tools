@@ -8,9 +8,7 @@
  *   AUTH_SECRET   HMAC 签名密钥（必填，随机长字符串，Secret 配置）
  *   ADMIN_KEY     管理接口密钥（必填，运营生成卡密用，Secret 配置）
  *   ALLOW_ORIGIN  CORS 允许来源，默认 *；生产建议限定为你的域名
- *   AI_API_KEY    第三方 AI API Key（必填，Secret 配置，严禁写入前端/代码库）
- *   AI_BASE_URL   第三方 AI 地址（默认 OpenAI 兼容 /v1，可选）
- *   AI_MODEL      模型名（可选，默认见 config.js）
+ *   GRSAI_API_KEY Grsai API Key（必填，Secret 配置，严禁写入前端/代码库）
  *
  * 路由：
  *   POST /api/auth/anonymous  签发匿名 token（第一阶段身份，无注册/验证码）
@@ -110,7 +108,7 @@ async function requireUser(request, env) {
   if (!token) return null
   const payload = await verifyToken(env.AUTH_SECRET, token)
   if (!payload) return null
-  return env.DB.prepare('SELECT id, points FROM users WHERE id = ?').bind(payload.uid).first()
+  return env.DB.prepare('SELECT id, anon_id, points FROM users WHERE id = ?').bind(payload.uid).first()
 }
 
 /** 卡密字符集（去掉易混淆的 0 O 1 I L） */
@@ -128,23 +126,30 @@ function randomCardCode() {
  * 注意：不能放进 batch 靠 changes 判断 —— D1 batch 只在语句抛错时回滚。
  */
 async function chargePoints(env, userId, points, ref) {
-  const res = await env.DB.prepare(
-    'UPDATE users SET points = points - ? WHERE id = ? AND points >= ?'
-  ).bind(points, userId, points).run()
-  if (res.meta.changes === 0) return false
-  await env.DB.prepare(
-    "INSERT INTO transactions (user_id, type, points, ref) VALUES (?, 'consume', ?, ?)"
-  ).bind(userId, -points, ref).run()
-  return true
+  const results = await env.DB.batch([
+    env.DB.prepare(
+      'UPDATE users SET points = points - ? WHERE id = ? AND points >= ?'
+    ).bind(points, userId, points),
+    env.DB.prepare(
+      "INSERT INTO transactions (user_id, type, points, ref) SELECT ?, 'consume', ?, ? WHERE changes() > 0"
+    ).bind(userId, -points, ref)
+  ])
+  return Number(results[0]?.meta?.changes || 0) > 0
 }
 
 /** 退还积分（AI 调用失败时原路退回） */
 async function refundPoints(env, userId, points, ref) {
-  await env.DB.prepare('UPDATE users SET points = points + ? WHERE id = ?')
-    .bind(points, userId).run()
-  await env.DB.prepare(
-    "INSERT INTO transactions (user_id, type, points, ref) VALUES (?, 'refund', ?, ?)"
-  ).bind(userId, points, ref).run()
+  await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE users SET points = points + ?
+       WHERE id = ?
+         AND EXISTS (SELECT 1 FROM transactions WHERE user_id = ? AND type = 'consume' AND ref = ?)
+         AND NOT EXISTS (SELECT 1 FROM transactions WHERE user_id = ? AND type = 'refund' AND ref = ?)`
+    ).bind(points, userId, userId, ref, userId, ref),
+    env.DB.prepare(
+      "INSERT INTO transactions (user_id, type, points, ref) SELECT ?, 'refund', ?, ? WHERE changes() > 0"
+    ).bind(userId, points, ref)
+  ])
 }
 
 /**
@@ -163,43 +168,13 @@ async function checkRateLimit(env, scope, key, limit, windowSeconds) {
   return Number(row.c) > limit
 }
 
-/** 第三方 AI 调用（OpenAI 兼容 /chat/completions） */
-async function callAi(env, messages) {  const apiKey = env.AI_API_KEY
-  if (!apiKey) throw new Error('AI_API_KEY 未配置，请联系管理员')
-  const baseUrl = (env.AI_BASE_URL || CONFIG.AI_BASE_URL).replace(/\/$/, '')
-  const model = env.AI_MODEL || CONFIG.AI_MODEL
-
-  const res = await fetch(`${baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`
-    },
-    body: JSON.stringify({ model, messages, temperature: 0.7 }),
-    signal: AbortSignal.timeout(CONFIG.AI_TIMEOUT_MS)
-  })
-  if (!res.ok) {
-    const detail = await res.text().catch(() => '')
-    throw new Error(`AI 服务错误（${res.status}）：${detail.slice(0, 200)}`)
-  }
-  const data = await res.json()
-  return data.choices?.[0]?.message?.content ?? ''
-}
-
-/** 记录 AI 调用成功 */
-async function recordAiOk(env, userId, toolId, points, model) {
-  await env.DB.prepare(
-    "INSERT INTO ai_calls (user_id, tool, status, points, model) VALUES (?, ?, 'ok', ?, ?)"
-  ).bind(userId, toolId, points, model).run()
-}
-
 /** 记录 AI 调用失败（收费工具自动退款） */
-async function recordAiError(env, userId, tool, toolId, e) {
+async function recordAiError(env, userId, tool, toolId, requestId, e) {
   console.error(`[AI][${toolId}] 调用失败：`, e.message) // 细节仅记日志，不外泄
-  if (!tool.free) await refundPoints(env, userId, tool.points, toolId) // 收费工具失败原路退还
+  if (!tool.free) await refundPoints(env, userId, tool.points, requestId) // 收费工具失败原路退还
   await env.DB.prepare(
     "INSERT INTO ai_calls (user_id, tool, status, points, model) VALUES (?, ?, 'error', 0, ?)"
-  ).bind(userId, toolId, env.AI_MODEL || CONFIG.AI_MODEL).run()
+  ).bind(userId, toolId, CONFIG.GRSAI_MODEL).run()
 }
 
 /* ---------------- 各 API ---------------- */
@@ -223,7 +198,7 @@ async function handleAuthAnonymous(env, request) {
 
   return ok({
     token,
-    user: { id: uid, points: 0 },
+    user: { id: uid, anonId, points: 0 },
     note: '匿名身份，积分绑定当前浏览器；请勿清除浏览器数据，否则积分将丢失'
   })
 }
@@ -237,20 +212,29 @@ async function handleRedeem(env, user, body) {
   if (!card) return fail('卡密不存在', 404, 'card_not_found')
   if (card.status !== 'new') return fail('卡密已使用，请检查是否输错', 409, 'card_used')
 
-  // 幂等防并发：条件更新卡密，只有 status='new' 才成功（防双花）
-  const claim = await env.DB.prepare(
-    "UPDATE cards SET status = 'used', redeemed_by = ?, redeemed_at = ? WHERE code = ? AND status = 'new'"
-  ).bind(user.id, nowIso(), code).run()
-  if (claim.meta.changes === 0) return fail('卡密已使用', 409, 'card_used')
-
-  // 加积分 + 记流水（均为无条件语句，batch 保证整体原子）
-  await env.DB.batch([
-    env.DB.prepare('UPDATE users SET points = points + ? WHERE id = ?')
-      .bind(card.points, user.id),
+  // 卡密认领、到账和流水必须在同一个 D1 batch 中原子提交。
+  // 唯一 claimRef 让并发失败者的后续语句匹配不到该卡，不会重复加分。
+  const claimRef = `${nowIso()}:${crypto.randomUUID()}`
+  const results = await env.DB.batch([
     env.DB.prepare(
-      "INSERT INTO transactions (user_id, type, points, ref) VALUES (?, 'redeem', ?, ?)"
-    ).bind(user.id, card.points, code)
+      "UPDATE cards SET status = 'used', redeemed_by = ?, redeemed_at = ? WHERE code = ? AND status = 'new'"
+    ).bind(user.id, claimRef, code),
+    env.DB.prepare(
+      `UPDATE users
+       SET points = points + (SELECT points FROM cards WHERE code = ? AND redeemed_by = ? AND redeemed_at = ?)
+       WHERE id = ? AND EXISTS (
+         SELECT 1 FROM cards WHERE code = ? AND redeemed_by = ? AND redeemed_at = ?
+       )`
+    ).bind(code, user.id, claimRef, user.id, code, user.id, claimRef),
+    env.DB.prepare(
+      `INSERT INTO transactions (user_id, type, points, ref)
+       SELECT ?, 'redeem', points, code FROM cards
+       WHERE code = ? AND redeemed_by = ? AND redeemed_at = ?`
+    ).bind(user.id, code, user.id, claimRef)
   ])
+  if (Number(results[0]?.meta?.changes || 0) === 0) {
+    return fail('卡密已使用', 409, 'card_used')
+  }
 
   const fresh = await env.DB.prepare('SELECT id, points FROM users WHERE id = ?')
     .bind(user.id).first()
@@ -262,17 +246,20 @@ async function handleMe(env, user) {
   const txns = await env.DB.prepare(
     'SELECT type, points, ref, created_at FROM transactions WHERE user_id = ? ORDER BY id DESC LIMIT 20'
   ).bind(user.id).all()
-  return ok({ user, transactions: txns.results })
+  return ok({
+    user: { id: user.id, anonId: user.anon_id, points: user.points },
+    transactions: txns.results
+  })
 }
 
-/** POST /api/consume — 按次扣分（仅收费工具；当前工具全部免费，图片/视频收费工具上线后生效） */
+/** POST /api/consume — 通用按次扣分端点；图片生成使用 /api/ai/generate 的原子计费链路。 */
 async function handleConsume(env, user, body) {
   const feature = String(body?.feature || '')
   const rule = CONFIG.tools[feature]
   if (!rule) return fail('未知的收费功能', 400, 'unknown_feature')
   if (rule.free) return fail('该功能当前免费，无需扣积分', 400, 'free_feature')
 
-  const charged = await chargePoints(env, user.id, rule.points, feature)
+  const charged = await chargePoints(env, user.id, rule.points, `${feature}:${crypto.randomUUID()}`)
   if (!charged) {
     return fail(`积分不足，${rule.name}需要 ${rule.points} 积分`, 409, 'insufficient_points')
   }
@@ -288,84 +275,64 @@ async function handleAiGenerate(env, user, body) {
   const tool = CONFIG.tools[toolId]
   if (!tool) return fail('未知的 AI 工具', 400, 'unknown_tool')
 
-  const type = tool.type || 'text'
-  if (type === 'text' && !(Array.isArray(body?.messages) && body.messages.length > 0)) {
-    return fail('请提供内容', 400, 'missing_messages')
-  }
-  if (type !== 'text' && !String(body?.prompt || '').trim()) {
+  const type = tool.type
+  const prompt = String(body?.prompt || '').trim()
+  if (!prompt) {
     return fail('请提供描述', 400, 'missing_prompt')
+  }
+  if (prompt.length > CONFIG.MAX_PROMPT_LENGTH) {
+    return fail(`图片描述不能超过 ${CONFIG.MAX_PROMPT_LENGTH} 个字符`, 400, 'prompt_too_long')
   }
 
   // 服务未配置的收费能力提前拦截（不扣费）
-  if (type === 'image' && !env.IMAGE_API_KEY) {
+  if (type === 'image' && !env.GRSAI_API_KEY) {
     return fail('图片生成服务未配置，请联系管理员', 501, 'image_not_configured')
   }
   if (type === 'video') {
     return fail('视频生成功能筹备中，敬请期待', 501, 'video_not_ready')
   }
 
-  // 限流：同一用户每分钟调用上限。
-  // 注意：ai_calls.created_at 用 SQLite datetime('now')（空格格式 YYYY-MM-DD HH:MM:SS），
-  // 不能用 JS toISOString()（T 分隔 + 毫秒 + Z）比较 —— 空格(0x20) < 'T'(0x54)，会恒不匹配导致限流失效。
-  const recent = await env.DB.prepare(
-    "SELECT COUNT(*) AS c FROM ai_calls WHERE user_id = ? AND created_at >= datetime('now','-60 seconds')"
-  ).bind(user.id).first()
-  if (Number(recent.c) >= CONFIG.AI_RATE_LIMIT_PER_MINUTE) {
+  // 在扣分和调用 Grsai 之前先占用限流槽位，避免并发请求同时穿透。
+  if (await checkRateLimit(env, 'ai', String(user.id), CONFIG.AI_RATE_LIMIT_PER_MINUTE, 60)) {
     return fail('操作太频繁，请稍后再试', 429, 'rate_limited')
   }
+
+  const requestId = crypto.randomUUID()
 
   // 扣分（免费工具跳过；收费工具按 points 扣）
   const isFree = tool.free === true
   if (!isFree) {
-    const charged = await chargePoints(env, user.id, tool.points, toolId)
+    const charged = await chargePoints(env, user.id, tool.points, requestId)
     if (!charged) {
       return fail(`积分不足，${tool.name}需要 ${tool.points} 积分，请先兑换卡密`, 409, 'insufficient_points')
     }
   }
 
   if (type === 'image') {
-    return generateImage(env, user, tool, toolId, body.prompt.trim())
+    return generateImage(env, user, tool, toolId, requestId, prompt)
   }
-  return generateText(env, user, tool, toolId, body.messages)
+  return fail('接口不存在', 404, 'not_found')
 }
 
-/** 文本生成（chat/completions） */
-async function generateText(env, user, tool, toolId, messages) {
-  let text = ''
-  try {
-    text = await callAi(env, messages)
-    if (!text || !text.trim()) {
-      // 空结果视为失败（防用户拿到空白内容）
-      throw new Error('AI 未返回有效内容，请稍后重试')
-    }
-  } catch (e) {
-    await recordAiError(env, user.id, tool, toolId, e)
-    return fail('AI 服务暂时不可用，本次未扣费', 502, 'ai_error')
-  }
-
-  const points = tool.free ? 0 : tool.points
-  await recordAiOk(env, user.id, toolId, points, env.AI_MODEL || CONFIG.AI_MODEL)
-  const fresh = await env.DB.prepare('SELECT id, points FROM users WHERE id = ?')
-    .bind(user.id).first()
-  return ok({ text, points: fresh.points, deducted: points })
-}
-
-/** 图片生成（OpenAI 兼容 /images/generations，同步返回图片 URL/base64） */
-async function generateImage(env, user, tool, toolId, prompt) {
+/** 图片生成（只调用 Grsai GPT Image，同步返回 URL） */
+async function generateImage(env, user, tool, toolId, taskId, prompt) {
   let imageUrl = ''
+  const expiresAt = new Date(Date.now() + 7 * 24 * 3600 * 1000)
+    .toISOString().replace('T', ' ').slice(0, 19)
   try {
-    const apiKey = env.IMAGE_API_KEY
-    if (!apiKey) throw new Error('IMAGE_API_KEY 未配置')
-    const baseUrl = (env.IMAGE_BASE_URL || CONFIG.IMAGE_BASE_URL).replace(/\/$/, '')
-    const model = env.IMAGE_MODEL || CONFIG.IMAGE_MODEL
-
-    const res = await fetch(`${baseUrl}/images/generations`, {
+    const res = await fetch(`${CONFIG.GRSAI_BASE_URL}/images/generations`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`
+        Authorization: `Bearer ${env.GRSAI_API_KEY}`
       },
-      body: JSON.stringify({ model, prompt, size: CONFIG.IMAGE_SIZE, n: 1 }),
+      body: JSON.stringify({
+        model: CONFIG.GRSAI_MODEL,
+        prompt,
+        image: [],
+        size: CONFIG.GRSAI_IMAGE_SIZE,
+        response_format: 'url'
+      }),
       signal: AbortSignal.timeout(CONFIG.AI_TIMEOUT_MS)
     })
     if (!res.ok) {
@@ -374,18 +341,94 @@ async function generateImage(env, user, tool, toolId, prompt) {
     }
     const data = await res.json()
     const item = data.data?.[0]
-    imageUrl = item?.url || (item?.b64_json ? `data:image/png;base64,${item.b64_json}` : '')
+    imageUrl = item?.url || ''
     if (!imageUrl) throw new Error('图片服务未返回有效图片')
+
+    // 生成记录与成功审计一起提交；任一写入失败都会整体回滚并进入退款分支。
+    await env.DB.batch([
+      env.DB.prepare(
+        "INSERT INTO generations (task_id, user_id, type, points, prompt, model, remote_url, expires_at) VALUES (?, ?, 'image', ?, ?, ?, ?, ?)"
+      ).bind(taskId, user.id, tool.points, prompt, CONFIG.GRSAI_MODEL, imageUrl, expiresAt),
+      env.DB.prepare(
+        "INSERT INTO ai_calls (user_id, tool, status, points, model) VALUES (?, ?, 'ok', ?, ?)"
+      ).bind(user.id, toolId, tool.points, CONFIG.GRSAI_MODEL)
+    ])
   } catch (e) {
-    await recordAiError(env, user.id, tool, toolId, e)
+    await recordAiError(env, user.id, tool, toolId, taskId, e)
     return fail('图片生成失败，本次未扣费', 502, 'ai_error')
   }
 
-  const points = tool.free ? 0 : tool.points
-  await recordAiOk(env, user.id, toolId, points, env.IMAGE_MODEL || CONFIG.IMAGE_MODEL)
-  const fresh = await env.DB.prepare('SELECT id, points FROM users WHERE id = ?')
-    .bind(user.id).first()
-  return ok({ imageUrl, points: fresh.points, deducted: points })
+  const points = tool.points
+  // 生成已经原子提交，后续余额读取失败不能把一个已付费成功任务伪装成 500。
+  let remainingPoints = Math.max(Number(user.points) - points, 0)
+  try {
+    const fresh = await env.DB.prepare('SELECT id, points FROM users WHERE id = ?')
+      .bind(user.id).first()
+    if (fresh) remainingPoints = fresh.points
+  } catch (e) {
+    console.error(`[AI][${toolId}] 成功后读取余额失败：`, e.message)
+  }
+  return ok({
+    type: 'image',
+    taskId,
+    imageUrl: `/api/generations/${taskId}/file`,
+    expiresAt,
+    points: remainingPoints,
+    deducted: points
+  })
+}
+
+/** GET /api/generations — 当前游客最近 7 天的生成记录 */
+async function handleGenerations(env, user, url) {
+  await env.DB.prepare("DELETE FROM generations WHERE expires_at <= datetime('now')").run()
+  const type = url.searchParams.get('type') || 'all'
+  const filter = type === 'all' ? '' : ' AND type = ?'
+  const stmt = env.DB.prepare(
+    `SELECT task_id, type, points, prompt, model, created_at, expires_at,
+      '/api/generations/' || task_id || '/file' AS file_url
+     FROM generations
+     WHERE user_id = ? AND expires_at > datetime('now')${filter}
+     ORDER BY id DESC LIMIT 50`
+  )
+  const rows = type === 'all' ? await stmt.bind(user.id).all() : await stmt.bind(user.id, type).all()
+  return ok({ items: rows.results })
+}
+
+/** GET /api/generations/:taskId/file — 鉴权后由 Worker 拉取 Grsai 文件，不转发游客 token */
+async function handleGenerationFile(env, user, taskId) {
+  const item = await env.DB.prepare(
+    "SELECT remote_url FROM generations WHERE task_id = ? AND user_id = ? AND expires_at > datetime('now')"
+  ).bind(taskId, user.id).first()
+  if (!item) return fail('图片不存在或已过期', 404, 'generation_not_found')
+
+  let upstream
+  try {
+    upstream = await fetch(item.remote_url, {
+      headers: { Accept: 'image/*' },
+      signal: AbortSignal.timeout(CONFIG.AI_TIMEOUT_MS)
+    })
+  } catch {
+    return fail('图片暂时无法读取', 502, 'media_unavailable')
+  }
+  if (!upstream.ok || !upstream.body) return fail('图片暂时无法读取', 502, 'media_unavailable')
+
+  return new Response(upstream.body, {
+    status: 200,
+    headers: {
+      'Content-Type': upstream.headers.get('Content-Type') || 'image/png',
+      'Cache-Control': 'private, max-age=300',
+      'X-Content-Type-Options': 'nosniff'
+    }
+  })
+}
+
+/** DELETE /api/generations/:taskId — 只删除当前游客记录 */
+async function handleDeleteGeneration(env, user, taskId) {
+  const result = await env.DB.prepare(
+    'DELETE FROM generations WHERE task_id = ? AND user_id = ?'
+  ).bind(taskId, user.id).run()
+  if (result.meta.changes === 0) return fail('生成记录不存在', 404, 'generation_not_found')
+  return ok({ deleted: true, taskId })
 }
 
 /** POST /api/admin/cards — 生成卡密（运营方） */
@@ -395,25 +438,44 @@ async function handleAdminCards(env, request, body) {
 
   const points = Number(body?.points)
   const count = Number(body?.count || 1)
-  if (!Number.isInteger(points) || points <= 0) return fail('面额积分必须是正整数', 400, 'invalid_points')
+  if (!CONFIG.cardPoints.includes(points)) {
+    return fail('卡密面额仅支持 50000 或 100000 积分', 400, 'invalid_points')
+  }
   if (!Number.isInteger(count) || count < 1 || count > 100) {
     return fail('数量需在 1-100 之间', 400, 'invalid_count')
   }
 
-  const codes = []
-  for (let i = 0; i < count; i++) {
-    for (let attempt = 0; attempt < 5; attempt++) {
+  // D1 Free 每次 Worker 调用最多 50 个数据库查询。
+  // 每 50 张拼成一个多行 INSERT，100 张只需 2 个语句，并由 batch 原子提交。
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const used = new Set()
+    const codes = []
+    while (codes.length < count) {
       const code = randomCardCode()
-      try {
-        await env.DB.prepare('INSERT INTO cards (code, points) VALUES (?, ?)').bind(code, points).run()
+      if (!used.has(code)) {
+        used.add(code)
         codes.push({ code, points })
-        break
-      } catch (e) {
-        if (attempt === 4) throw e
       }
     }
+
+    const statements = []
+    for (let start = 0; start < codes.length; start += 50) {
+      const chunk = codes.slice(start, start + 50)
+      const placeholders = chunk.map(() => '(?, ?)').join(', ')
+      const values = chunk.flatMap((card) => [card.code, card.points])
+      statements.push(
+        env.DB.prepare(`INSERT INTO cards (code, points) VALUES ${placeholders}`).bind(...values)
+      )
+    }
+
+    try {
+      await env.DB.batch(statements)
+      return ok({ count: codes.length, cards: codes })
+    } catch (error) {
+      if (attempt === 2) throw error
+    }
   }
-  return ok({ count: codes.length, cards: codes })
+  return fail('卡密生成失败', 500, 'card_generation_failed')
 }
 
 /* ---------------- 支付（支付宝自动到账） ---------------- */
@@ -532,7 +594,7 @@ async function handlePayResult(env, user, url) {
 function corsHeaders(origin) {
   return {
     'Access-Control-Allow-Origin': origin,
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Admin-Key',
     'Access-Control-Max-Age': '86400'
   }
@@ -546,7 +608,13 @@ export default {
       return new Response(null, { status: 204, headers: corsHeaders(origin) })
     }
 
-    const res = await routeRequest(request, env)
+    let res
+    try {
+      res = await routeRequest(request, env)
+    } catch (e) {
+      console.error('API error:', e)
+      res = fail('服务器内部错误', 500, 'internal_error')
+    }
     res.headers.set('Access-Control-Allow-Origin', origin)
     return res
   }
@@ -605,6 +673,23 @@ async function routeRequest(request, env) {
       // POST /api/ai/generate
       if (pathname === '/api/ai/generate' && request.method === 'POST') {
         return handleAiGenerate(env, user, await readBody(request))
+      }
+
+      // GET /api/generations?type=image — 当前游客生成历史
+      if (pathname === '/api/generations' && request.method === 'GET') {
+        return handleGenerations(env, user, url)
+      }
+
+      // GET /api/generations/:taskId/file — 同域鉴权图片代理
+      const fileMatch = pathname.match(/^\/api\/generations\/([0-9a-f-]+)\/file$/i)
+      if (fileMatch && request.method === 'GET') {
+        return handleGenerationFile(env, user, fileMatch[1])
+      }
+
+      // DELETE /api/generations/:taskId — 删除当前游客记录
+      const generationMatch = pathname.match(/^\/api\/generations\/([0-9a-f-]+)$/i)
+      if (generationMatch && request.method === 'DELETE') {
+        return handleDeleteGeneration(env, user, generationMatch[1])
       }
     }
 

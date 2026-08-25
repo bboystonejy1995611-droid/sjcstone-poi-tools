@@ -6,7 +6,20 @@
  *   - 本地联调：VITE_API_BASE=http://localhost:8787/api npm run dev
  *     （先运行 cd worker && npx wrangler dev --local）
  */
-export const API_BASE = import.meta.env.VITE_API_BASE || '/api'
+export const API_BASE = import.meta.env?.VITE_API_BASE || '/api'
+
+/**
+ * 调用方历史上统一传 `/api/...`，而 API_BASE 默认也是 `/api`。
+ * 这里去重一次前缀，同时保留 `http://localhost:8787/api` 的本地联调能力。
+ */
+export function apiUrl(base, path) {
+  const normalizedBase = String(base || '').replace(/\/$/, '')
+  const normalizedPath = `/${String(path || '').replace(/^\/+/, '')}`
+  if (normalizedBase.endsWith('/api') && normalizedPath.startsWith('/api/')) {
+    return `${normalizedBase}${normalizedPath.slice(4)}`
+  }
+  return `${normalizedBase}${normalizedPath}`
+}
 
 const TOKEN_KEY = 'spoi_token'
 
@@ -29,7 +42,7 @@ export async function api(path, options = {}) {
 
   let res
   try {
-    res = await fetch(`${API_BASE}${path}`, { ...options, headers })
+    res = await fetch(apiUrl(API_BASE, path), { ...options, headers })
   } catch {
     throw new Error('网络异常，请稍后重试')
   }

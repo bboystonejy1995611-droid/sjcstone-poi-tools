@@ -4,7 +4,7 @@
 
 - **官网首页（`/#/`）**：高端 AI SaaS 风格的品牌落地页——Hero 首屏、AI 工具展示、本地商家解决方案、视频号 POI 团购服务介绍、商家案例、合作咨询。
 - **AI 团购套餐生成器（`/#/generator`）**：输入门店信息，AI（本地规则引擎）自动生成 3 套适合上架视频号 POI 团购的套餐方案。
-- **纯前端**：Vue 3 + Vite，无数据库、无登录、无外部 API，部署到 Cloudflare Pages 即开即用。
+- **无独立服务器**：Vue 3 + Vite 部署在 Cloudflare Pages；`/api/*` 由 Cloudflare Worker 提供，积分、卡密和生成记录存入 D1。
 
 ## 本地运行
 
@@ -17,7 +17,7 @@ npm run dev     # 启动开发服务，浏览器打开 http://localhost:5173
 
 ```bash
 npm run build   # 生产构建，产物输出到 dist/
-npm test        # 生成逻辑回归测试（684 项断言，其中 1 项为概率性随机检查，偶发失败属正常）
+npm test        # 前端生成器、Worker 计费链路和后台工具测试
 npm run preview # 本地预览构建产物
 ```
 
@@ -27,24 +27,23 @@ npm run preview # 本地预览构建产物
 |---|---|---|
 | `/#/` | 官网首页 | 品牌落地页（浅色主题） |
 | `/#/generator` | AI 团购套餐生成器 | 免费引流工具（深色主题，不消耗积分） |
-| `/#/tool/:toolId` | AI 工具 | 口播/探店/营销/海报生成器（浅色主题，当前免费，图片/视频收费预留） |
+| `/#/tool/:toolId` | AI 工具 | 文案工具本地生成；AI 海报调用 Grsai GPT Image，600 积分/次 |
+| `/#/generations` | 生成记录 | 查看、下载或删除当前游客的图片生成记录 |
+| `/#/admin` | 卡密管理 | 使用 `ADMIN_KEY` 批量生成 50,000 / 100,000 积分卡密 |
 
 > 官网首页内锚点（AI工具 / 解决方案 / POI团购 / 商家案例 / 合作咨询）为页面内平滑滚动，非独立路由。
 
-## 收费模式（当前免费 + 收费预留）
+## 积分与图片生成
 
-- **当前状态**：5 个文案类工具**免费**（团购套餐生成器 + 口播/探店/营销/海报提示词）；**AI 海报生成器收费**（20 积分/张，定价待运营填写）；**宣传视频生成器**界面与收费框架已就绪、API 后补（当前提示"即将上线"，不扣费）。
-- **收费机制**：积分/卡密体系已激活——用户充值后由运营下发卡密，兑换成积分，收费工具按次扣积分（积分不足引导兑换）。导航积分徽章、兑换卡密/充值弹窗可用。
-- **在线充值（自动到账）**：弹窗「在线充值」选套餐 → 支付宝支付 → 回调自动加积分到账户（无需卡密）。需配置支付宝密钥（`ALIPAY_APP_ID` / `ALIPAY_PRIVATE_KEY` / `ALIPAY_PUBLIC_KEY`，见 `worker/README.md`）；未配置时提示改用卡密。
-- **免费工具也走 Worker 代理**：免费 ≠ 无 AI 调用，5 个工具的 AI 调用仍由 Worker 代理（`AI_API_KEY` 只存 Secret），并记录 `ai_calls` 使用量、限流防滥用。
-- **配置**：后端 `worker/src/config.js`（工具/积分定价/AI 端点，后端为准）+ 前端 `src/config/siteConfig.js` 的 `billing`（同步展示）。
-  - **积分定价**（poster_image 海报 / promo_video 视频）：在 `worker/src/config.js` 的 `tools` 里填写 `points`（当前为占位示例 20/50）。
-  - **图片 API**：`IMAGE_API_KEY`（Secret）+ `IMAGE_BASE_URL` / `IMAGE_MODEL`（OpenAI 兼容 /images/generations）。
-  - **视频 API**：后补，接入时配置 `VIDEO_API_KEY` + `VIDEO_BASE_URL` 并实现异步任务（提交→轮询）。
+- **游客账户**：首次调用自动创建游客 ID，token 仅保存在当前浏览器；无需注册登录。
+- **积分规则**：AI 海报固定消耗 600 积分；余额不足时返回兑换卡密提示；上游失败会自动退回已扣积分。
+- **卡密规则**：只允许 50,000 或 100,000 积分，一张卡只能兑换一次并绑定兑换游客，D1 条件更新防止并发重复兑换。
+- **图片服务**：只调用 Grsai `gpt-image-2`。`GRSAI_API_KEY` 只保存在 Worker Secret，不进入前端或 Git。
+- **后台制卡**：访问 `/#/admin`，输入 Worker 的 `ADMIN_KEY`，选择面值和数量（1–100）即可生成并复制卡密。
 - **后端部署**：Cloudflare Worker + D1，完整步骤见 [`worker/README.md`](worker/README.md)。
-- **生成卡密**（运营侧，收费工具上线后使用）：
+- **命令行生成卡密**（可选）：
   ```bash
-  node worker/scripts/gen-cards.mjs --points 100 --count 10 --api https://tools.sjcstone.cn/api --key <ADMIN_KEY>
+  node worker/scripts/gen-cards.mjs --points 50000 --count 10 --api https://tools.sjcstone.cn/api --key <ADMIN_KEY>
   ```
 - **本地联调前端**：先 `cd worker && npx wrangler dev --local`，再 `VITE_API_BASE=http://localhost:8787/api npm run dev`。
 
@@ -74,7 +73,7 @@ npm run preview # 本地预览构建产物
 
 编辑 `src/config/agentConfig.js`，把 `showContact` 置为 `true` 并填写 `agentName` / `contactWechat` / `contactQrCode` 后，生成器页面底部会显示服务商名称、微信号或二维码；保持 `false` 则不显示任何联系方式。
 
-## 上传到 GitHub
+## GitHub 与 Cloudflare 部署
 
 1. 在 GitHub 新建一个空仓库（不要勾选 README/.gitignore，本仓库已自带）。
 2. 在项目目录执行（把 `<你的用户名>` 和 `<仓库名>` 换成实际值）：
@@ -90,7 +89,7 @@ git push -u origin main
 
 > 提示：`.gitignore` 已排除 `node_modules/` 和 `dist/`，上传的是源码，构建在 Cloudflare 云端完成。
 
-## 部署到 Cloudflare Pages
+### Cloudflare Pages 前端
 
 | 配置项 | 值 |
 |---|---|
@@ -109,6 +108,24 @@ git push -u origin main
 5. 绑定域名：Pages 项目 →「自定义域」→ 添加 `tools.sjcstone.cn`，并按提示在 DNS 中添加 CNAME 记录（`tools` → `<项目名>.pages.dev`），等待证书自动签发后即可用 `https://tools.sjcstone.cn` 访问。
 
 > 本项目路由使用 hash 模式（`/#/`），**不需要**任何重定向/SPA fallback 配置，部署后所有页面路径天然可用。
+
+### Worker、D1 与 Grsai Secret
+
+生产配置已写入 `worker/wrangler.toml`：Worker 名称为 `poi-billing-api`，D1 为 `poi-billing`，路由为 `tools.sjcstone.cn/api/*`。初始化或升级数据库并部署：
+
+```bash
+npx wrangler d1 execute poi-billing --remote --file worker/schema.sql
+npx wrangler deploy --config worker/wrangler.toml
+```
+
+在 Cloudflare 控制台进入「Workers 和 Pages」→ `poi-billing-api` →「设置」→「变量和机密」→「添加」，名称填写 `GRSAI_API_KEY`，类型选择加密 Secret，值粘贴 Grsai API Key。也可以使用：
+
+```bash
+cd worker
+npx wrangler secret put GRSAI_API_KEY
+```
+
+前端 push 到 GitHub `main` 后由现有 Pages 项目自动重新部署。
 
 ## 开启访问统计（免费）
 
@@ -132,9 +149,9 @@ git push -u origin main
 - **Cloudflare Web Analytics**：在 `index.html` 粘贴官方 Beacon `<script>`，并在 `_report` 中调用 `window.__cfBeacon.push`
 - **Google Analytics (GA4)**：在 `index.html` 粘贴官方 gtag.js，并在 `_report` 中调用 `window.gtag`
 - **Umami**：在 `_report` 中调用 `window.umami.track`
-- **自建后台统计**：在 `_report` 中 POST JSON 到自建接口（后台页面挂载点已在 `src/router/index.js` 预留 `/#/admin`）
+- **自建后台统计**：在 `_report` 中 POST JSON 到自建接口（卡密管理页 `/#/admin` 不包含统计功能）
 
-> 默认情况下所有统计开关均为关闭状态，页面不加载任何外部脚本、不发任何外部请求，保持纯前端。
+> 默认情况下所有统计开关均为关闭状态，页面不会发送统计数据；图片生成与账户相关请求只发往同域 `/api/*`。
 
 ## 后期规划
 
@@ -157,7 +174,7 @@ git push -u origin main
 ├── public/favicon.svg
 ├── src/
 │   ├── main.js / App.vue           # 入口 + 外壳（按路由切换深/浅主题）+ 全局 Toast
-│   ├── router/index.js             # 路由注册表（官网首页 + 工具路由 + /admin 预留）
+│   ├── router/index.js             # 路由注册表（官网首页 + 工具/记录/卡密管理路由）
 │   ├── config/
 │   │   ├── siteConfig.js           # 官网配置（品牌/微信号/二维码/目标用户/计费规则，上线前必改）
 │   │   └── agentConfig.js          # 生成器页服务商授权配置（默认不显示联系方式）
@@ -177,20 +194,22 @@ git push -u origin main
 │   ├── views/
 │   │   ├── HomeView.vue            # 官网首页（组合各 section）
 │   │   ├── ToolView.vue            # 付费 AI 工具通用页（/#/tool/:id，调 AI 代理扣积分）
+│   │   ├── GenerationListView.vue   # 当前游客的图片生成记录
+│   │   ├── AdminView.vue           # 固定面值卡密批量生成页
 │   │   └── GeneratorView.vue       # AI 团购套餐生成器（/#/generator，免费引流）
 │   ├── components/
 │   │   ├── landing/                # 官网区块组件（导航/各 section/兑换卡密弹层等）
 │   │   └── ...                     # 工具页组件（7 个）
 │   └── config/agentConfig.js
 ├── worker/                         # 积分计费 + AI 代理后端（Cloudflare Worker + D1，见 worker/README.md）
-│   ├── schema.sql                  # D1 表结构（users/cards/transactions/ai_calls）
+│   ├── schema.sql                  # D1 表结构（账户/卡密/流水/调用/生成记录等）
 │   ├── src/index.js                # API 全部逻辑（零运行时依赖；AI Key 只读 Secret）
-│   ├── src/config.js               # 工具积分/卡密套餐/AI 端点配置（后端为准）
+│   ├── src/config.js               # 600 积分、固定卡面值与 Grsai 端点配置
 │   └── scripts/gen-cards.mjs       # 运营脚本：批量生成卡密
 └── test/
     ├── generator.test.mjs          # 生成逻辑回归测试（684 项断言）
-    └── billing-flow.test.mjs       # 计费/AI 代理完整流程冒烟测试（38 项断言，node:sqlite 模拟 D1）
-```
+    ├── billing-flow.test.mjs       # 计费/Grsai/记录/隔离测试（node:sqlite 模拟 D1）
+    └── admin.test.mjs              # 管理页卡密面值和数量校验
 ```
 
 Web Analytics enabled

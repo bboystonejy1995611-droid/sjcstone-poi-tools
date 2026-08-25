@@ -96,13 +96,14 @@ for (const c of cases) {
   }
 }
 
-// 随机性：同一输入两次生成应允许不同（重新生成功能依赖）
-const r1 = generatePlans(cases[0].input)
-const r2 = generatePlans(cases[0].input)
-assert(
-  r1.plans[0].price !== r2.plans[0].price || r1.plans[0].name !== r2.plans[0].name,
-  '重新生成结果有变化（随机性正常）'
-)
+// 随机性：同一输入应能生成变化；有限次采样避免两次恰好相同造成概率性误报。
+const baseline = generatePlans(cases[0].input).plans[0]
+let observedVariation = false
+for (let attempt = 0; attempt < 10 && !observedVariation; attempt++) {
+  const candidate = generatePlans(cases[0].input).plans[0]
+  observedVariation = candidate.price !== baseline.price || candidate.name !== baseline.name
+}
+assert(observedVariation, '重新生成结果有变化（10 次采样）')
 
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`)
 process.exit(fail > 0 ? 1 : 0)

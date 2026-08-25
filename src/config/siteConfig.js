@@ -66,6 +66,9 @@ export const siteConfig = {
      */
     onlinePaymentEnabled: false,
 
+    /** 运营后台允许生成的固定卡密面额（后端仍会再次校验）。 */
+    cardDenominations: [50000, 100000],
+
     /** AI 工具（与后端 tools 一致；free=true 免费；收费工具按 points，积分定价由运营在 worker/src/config.js 填写） */
     tools: [
       { id: 'oral_script', name: 'AI短视频口播生成器', free: true, desc: '短视频口播文案，免费使用', placeholder: '输入产品/主题，如：社区火锅店的招牌毛肚套餐', route: '/tool/oral_script' },

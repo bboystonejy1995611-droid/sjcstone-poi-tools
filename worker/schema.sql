@@ -45,6 +45,20 @@ CREATE TABLE IF NOT EXISTS ai_calls (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- 图片生成记录（远端地址永不直接返回前端，统一经同域鉴权接口代理）
+CREATE TABLE IF NOT EXISTS generations (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id     TEXT NOT NULL UNIQUE,
+  user_id     INTEGER NOT NULL,
+  type        TEXT NOT NULL DEFAULT 'image',
+  points      INTEGER NOT NULL,
+  prompt      TEXT NOT NULL,
+  model       TEXT NOT NULL,
+  remote_url  TEXT NOT NULL,
+  created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+  expires_at  TEXT NOT NULL DEFAULT (datetime('now', '+7 days'))
+);
+
 -- 通用限流记录（匿名签发按 IP 限流等）
 CREATE TABLE IF NOT EXISTS rate_limits (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -73,6 +87,8 @@ CREATE INDEX IF NOT EXISTS idx_cards_code      ON cards (code);
 CREATE INDEX IF NOT EXISTS idx_txn_user        ON transactions (user_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_ai_user_time    ON ai_calls (user_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_ai_tool_time    ON ai_calls (tool, created_at);
+CREATE INDEX IF NOT EXISTS idx_generations_user ON generations (user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_generations_expiry ON generations (expires_at);
 CREATE INDEX IF NOT EXISTS idx_rate_scope_key  ON rate_limits (scope, key, created_at);
 CREATE INDEX IF NOT EXISTS idx_orders_user     ON orders (user_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_orders_status   ON orders (status);

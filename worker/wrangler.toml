@@ -3,18 +3,21 @@
 
 name = "poi-billing-api"
 main = "src/index.js"
-compatibility_date = "2024-11-01"
+compatibility_date = "2026-08-25"
+
+routes = [
+  { pattern = "tools.sjcstone.cn/api/*", zone_name = "sjcstone.cn" }
+]
 
 # D1 数据库绑定
 [[d1_databases]]
 binding = "DB"
 database_name = "poi-billing"
-# 创建数据库后替换为真实 ID：
-#   npx wrangler d1 create poi-billing
-database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+database_id = "1507a498-61c6-4db5-887b-20f790d79ee7"
 
-# 生产建议：AUTH_SECRET / ADMIN_KEY 不要写在仓库，用 Secrets 配置：
+# AUTH_SECRET / ADMIN_KEY / GRSAI_API_KEY 不写入仓库，全部使用 Secrets：
 #   npx wrangler secret put AUTH_SECRET
 #   npx wrangler secret put ADMIN_KEY
+#   npx wrangler secret put GRSAI_API_KEY
 [vars]
-# ALLOW_ORIGIN = "https://tools.sjcstone.cn"
+ALLOW_ORIGIN = "https://tools.sjcstone.cn"

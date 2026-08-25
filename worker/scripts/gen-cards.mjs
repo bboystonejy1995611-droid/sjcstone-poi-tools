@@ -3,7 +3,7 @@
  *
  * 用法：
  *   node worker/scripts/gen-cards.mjs \
- *     --points 5000 \
+ *     --points 50000 \
  *     --count 10 \
  *     --api https://tools.sjcstone.cn/api \
  *     --key <ADMIN_KEY>
@@ -26,8 +26,12 @@ const count = Number(values.count || 1)
 const api = (values.api || 'http://localhost:8787/api').replace(/\/$/, '')
 const key = values.key
 
-if (!Number.isInteger(points) || points <= 0) {
-  console.error('错误：--points 必须为正整数（如 5000 / 10000）')
+if (![50000, 100000].includes(points)) {
+  console.error('错误：--points 仅支持 50000 或 100000')
+  process.exit(1)
+}
+if (!Number.isInteger(count) || count < 1 || count > 100) {
+  console.error('错误：--count 必须是 1 到 100 的整数')
   process.exit(1)
 }
 if (!key) {

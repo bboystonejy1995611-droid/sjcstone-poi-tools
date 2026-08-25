@@ -1,6 +1,12 @@
 # 依赖与构建产物
 node_modules/
 dist/
+.wrangler/
+.dev.vars
+.dev.vars.*
+.env
+.env.*
+!.env.example
 
 # 测试构建产物
 test/.out.mjs
