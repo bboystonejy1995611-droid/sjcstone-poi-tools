@@ -1,11 +1,12 @@
 # 积分、卡密与 Grsai 图片 API（Cloudflare Worker + D1）
 
-前端部署在 Cloudflare Pages，所有 `https://tools.sjcstone.cn/api/*` 请求由 `poi-billing-api` Worker 处理。没有独立服务器；API Key 只保存在 Cloudflare 加密 Secret 中。
+前端部署在 Cloudflare Pages，同域 `/api/*` Pages Function 通过 `POI_API` Service Binding 调用 `poi-billing-api` Worker。没有独立服务器；API Key 只保存在 Cloudflare 加密 Secret 中。
 
 ## 生产配置
 
 - Worker：`poi-billing-api`
-- 路由：`tools.sjcstone.cn/api/*`
+- 公开 API：`https://tools.sjcstone.cn/api`
+- 内部绑定：Pages `POI_API` → Worker `poi-billing-api`
 - D1：`poi-billing`（ID 已写入 `wrangler.toml`）
 - 图片上游：`POST https://grsaiapi.com/v1/images/generations`
 - 模型：`gpt-image-2`

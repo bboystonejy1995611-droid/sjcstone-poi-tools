@@ -4,10 +4,8 @@
 name = "poi-billing-api"
 main = "src/index.js"
 compatibility_date = "2026-08-25"
-
-routes = [
-  { pattern = "tools.sjcstone.cn/api/*", zone_name = "sjcstone.cn" }
-]
+workers_dev = true
+preview_urls = false
 
 # D1 数据库绑定
 [[d1_databases]]

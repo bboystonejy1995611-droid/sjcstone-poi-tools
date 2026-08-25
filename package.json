@@ -11,7 +11,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "esbuild test/generator.test.mjs --bundle --format=esm --platform=node --outfile=test/.out.mjs && node test/.out.mjs && node test/billing-flow.test.mjs && node test/admin.test.mjs && node test/api-client.test.mjs",
+    "test": "esbuild test/generator.test.mjs --bundle --format=esm --platform=node --outfile=test/.out.mjs && node test/.out.mjs && node test/billing-flow.test.mjs && node test/admin.test.mjs && node test/api-client.test.mjs && node test/pages-proxy.test.mjs",
     "test:billing": "node test/billing-flow.test.mjs"
   },
   "dependencies": {

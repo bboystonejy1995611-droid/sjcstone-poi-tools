@@ -4,7 +4,7 @@
 
 - **官网首页（`/#/`）**：高端 AI SaaS 风格的品牌落地页——Hero 首屏、AI 工具展示、本地商家解决方案、视频号 POI 团购服务介绍、商家案例、合作咨询。
 - **AI 团购套餐生成器（`/#/generator`）**：输入门店信息，AI（本地规则引擎）自动生成 3 套适合上架视频号 POI 团购的套餐方案。
-- **无独立服务器**：Vue 3 + Vite 部署在 Cloudflare Pages；`/api/*` 由 Cloudflare Worker 提供，积分、卡密和生成记录存入 D1。
+- **无独立服务器**：Vue 3 + Vite 部署在 Cloudflare Pages；同域 `/api/*` 由 Pages Function 通过 Service Binding 转发到 Worker，积分、卡密和生成记录存入 D1。
 
 ## 本地运行
 
@@ -111,7 +111,7 @@ git push -u origin main
 
 ### Worker、D1 与 Grsai Secret
 
-生产配置已写入 `worker/wrangler.toml`：Worker 名称为 `poi-billing-api`，D1 为 `poi-billing`，路由为 `tools.sjcstone.cn/api/*`。初始化或升级数据库并部署：
+Worker 生产配置位于 `worker/wrangler.toml`，Pages 配置位于根目录 `wrangler.toml`。根配置把 `POI_API` Service Binding 指向 `poi-billing-api`，因此浏览器只访问同域 `https://tools.sjcstone.cn/api/*`。初始化或升级数据库并部署 Worker：
 
 ```bash
 npx wrangler d1 execute poi-billing --remote --file worker/schema.sql

@@ -2,7 +2,7 @@
  * utils/api.js — 点数计费 API 客户端（纯 fetch，零依赖）
  *
  * API_BASE 取值：
- *   - 默认 '/api'：部署时 Worker 绑定到同一域名的 /api/* 路径（推荐）
+ *   - 默认 '/api'：Pages Function 通过 Service Binding 调用生产 Worker
  *   - 本地联调：VITE_API_BASE=http://localhost:8787/api npm run dev
  *     （先运行 cd worker && npx wrangler dev --local）
  */

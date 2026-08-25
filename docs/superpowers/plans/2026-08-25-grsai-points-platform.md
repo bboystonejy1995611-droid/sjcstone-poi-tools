@@ -4,7 +4,7 @@
 
 **Goal:** Make the existing Vue/Cloudflare site support anonymous credits, fixed-value card redemption, 600-credit Grsai GPT Image generation, history, and card administration.
 
-**Architecture:** Keep Vue on Cloudflare Pages and reuse the existing `poi-billing-api` Worker plus D1. Route only `tools.sjcstone.cn/api/*` to the Worker, so the current UI and custom domain remain unchanged while secrets and billing stay server-side.
+**Architecture:** Keep Vue on Cloudflare Pages and reuse the existing `poi-billing-api` Worker plus D1. A same-origin `/api/*` Pages Function calls the Worker through a `POI_API` Service Binding because the custom-domain Zone is not in the Worker account; secrets and billing remain server-side.
 
 **Tech Stack:** Vue 3, Vite 5, Cloudflare Workers, D1 SQLite, native Fetch/Web Crypto, Node test runner.
 
@@ -51,7 +51,7 @@
 - [x] Replace the generic OpenAI image call with the Grsai request body `{model,prompt,image:[],size,response_format:'url'}`.
 - [x] Add `generations` schema and owned list/file/delete handlers; proxy remote image bytes without forwarding the browser Authorization header.
 - [x] Restrict admin card creation to `[50000, 100000]` and keep count in `1..100`.
-- [x] Set the real D1 database ID and the `tools.sjcstone.cn/api/*` Worker route in Wrangler config.
+- [x] Set the real D1 database ID and add the Pages-to-Worker `POI_API` Service Binding configuration.
 - [x] Run `npm test` and confirm all billing tests pass.
 
 ### Task 3: Add the management page without changing existing UI

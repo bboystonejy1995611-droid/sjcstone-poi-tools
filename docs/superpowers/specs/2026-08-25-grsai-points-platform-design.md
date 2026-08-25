@@ -14,9 +14,9 @@
 
 ## 方案选择
 
-### 采用：现有 Worker + D1 + 同域路由
+### 采用：Pages Function + Service Binding + 现有 Worker/D1
 
-继续使用独立的 `poi-billing-api` Worker，并将 `tools.sjcstone.cn/api/*` 路由到该 Worker。它与 Pages Functions 一样是 Cloudflare Serverless 后端，但能复用已经部署的 Worker Secrets、D1 数据库和现有测试，变更面最小。Pages 仍只负责现有 Vue 静态页面。
+继续使用独立的 `poi-billing-api` Worker。实际部署检查发现 `sjcstone.cn` Zone 不在当前 Cloudflare 账户，无法绑定 Workers Route；浏览器直连 `workers.dev` 又存在网络可达性风险。因此增加同域 `/api/*` Pages Function，并通过 `POI_API` Service Binding 在 Cloudflare 内部调用 Worker。这样既复用现有 Worker Secrets、D1 数据库和测试，又不让浏览器依赖 `workers.dev` 公网入口。
 
 ### 未采用：迁移到 Pages Functions
 
@@ -68,5 +68,4 @@ Pages Functions 技术上适合本项目，但迁移后必须重新配置 Pages 
 
 - Node + 内存 SQLite 测试覆盖游客创建、固定卡密面额、重复兑换、600 分扣费、余额不足、Grsai 请求契约、失败退款、历史/文件鉴权和管理鉴权。
 - 执行根项目测试、Worker 测试、Vite 生产构建和 Wrangler dry-run。
-- 部署 Worker 后检查 `/api/me` 不再返回 SPA HTML；推送 `main` 触发 Pages Git 部署并检查线上构建状态。
-
+- 部署后检查同域 `/api/me` 返回 Worker JSON；推送 `main` 触发 Pages Git 部署并检查线上构建状态。

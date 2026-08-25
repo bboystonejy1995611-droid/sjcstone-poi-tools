@@ -6,6 +6,8 @@
 浏览器（Vue 3 / Cloudflare Pages，游客 token 存 localStorage）
    │  同域 /api/*，Authorization: Bearer <token>
    ▼
+Pages Function（POI_API Service Binding，不经过公网）
+   ▼
 Cloudflare Worker（鉴权 → 余额校验 → 扣 600 分 → 调用 Grsai）
    ├─ D1：游客、卡密、流水、调用日志、生成记录、限流
    └─ Grsai GPT Image：gpt-image-2（GRSAI_API_KEY 仅存 Worker Secret）
